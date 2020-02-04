@@ -1,0 +1,244 @@
+%%%%%%%% ICML 2019 EXAMPLE LATEX SUBMISSION FILE %%%%%%%%%%%%%%%%%
+
+\documentclass{article}
+
+% Recommended, but optional, packages for figures and better typesetting:
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{subfigure}
+\usepackage{booktabs} % for professional tables
+
+% hyperref makes hyperlinks in the resulting PDF.
+% If your build breaks (sometimes temporarily if a hyperlink spans a page)
+% please comment out the following usepackage line and replace
+% \usepackage{icml2019} with \usepackage[nohyperref]{icml2019} above.
+\usepackage{hyperref}
+
+% Attempt to make hyperref and algorithmic work together better:
+\newcommand{\theHalgorithm}{\arabic{algorithm}}
+
+% Use the following line for the initial blind version submitted for review:
+\usepackage{icml2019}
+
+% If accepted, instead use the following line for the camera-ready submission:
+%\usepackage[accepted]{icml2019}
+
+% The \icmltitle you define below is probably too long as a header.
+% Therefore, a short form for the running title is supplied here:
+\icmltitlerunning{Submission and Formatting Instructions for ICML 2019}
+
+
+
+\usepackage{filecontents}
+
+\begin{filecontents*}{bibliography.bib}
+@article{simonyan2013deep,
+  title={Deep inside convolutional networks: Visualising image classification models and saliency maps},
+  author={Simonyan, Karen and Vedaldi, Andrea and Zisserman, Andrew},
+  journal={arXiv preprint arXiv:1312.6034},
+  year={2013}
+}
+@article{springenberg2014striving,
+  title={Striving for simplicity: The all convolutional net},
+  author={Springenberg, Jost Tobias and Dosovitskiy, Alexey and Brox, Thomas and Riedmiller, Martin},
+  journal={arXiv preprint arXiv:1412.6806},
+  year={2014}
+}
+@article{selvaraju2016grad,
+  title={Grad-CAM: Why did you say that?},
+  author={Selvaraju, Ramprasaath R and Das, Abhishek and Vedantam, Ramakrishna and Cogswell, Michael and Parikh, Devi and Batra, Dhruv},
+  journal={arXiv preprint arXiv:1611.07450},
+  year={2016}
+}
+@article{smilkov2017smoothgrad,
+  title={Smoothgrad: removing noise by adding noise},
+  author={Smilkov, Daniel and Thorat, Nikhil and Kim, Been and Vi{\'e}gas, Fernanda and Wattenberg, Martin},
+  journal={arXiv preprint arXiv:1706.03825},
+  year={2017}
+}
+@inproceedings{adebayo2018sanity,
+  title={Sanity checks for saliency maps},
+  author={Adebayo, Julius and Gilmer, Justin and Muelly, Michael and Goodfellow, Ian and Hardt, Moritz and Kim, Been},
+  booktitle={Advances in Neural Information Processing Systems},
+  pages={9505--9515},
+  year={2018}
+}
+@article{wachter2017counterfactual,
+  title={Counterfactual explanations without opening the black box: Automated decisions and the GDPR},
+  author={Wachter, Sandra and Mittelstadt, Brent and Russell, Chris},
+  journal={Harv. JL \& Tech.},
+  volume={31},
+  pages={841},
+  year={2017},
+  publisher={HeinOnline}
+}
+@article{goyal2019counterfactual,
+  title={Counterfactual visual explanations},
+  author={Goyal, Yash and Wu, Ziyan and Ernst, Jan and Batra, Dhruv and Parikh, Devi and Lee, Stefan},
+  journal={arXiv preprint arXiv:1904.07451},
+  year={2019}
+}
+@article{singla2019explanation,
+  title={Explanation by Progressive Exaggeration},
+  author={Singla, Sumedha and Pollack, Brian and Chen, Junxiang and Batmanghelich, Kayhan},
+  journal={arXiv preprint arXiv:1911.00483},
+  year={2019}
+}
+@article{zhou2014object,
+  title={Object detectors emerge in deep scene cnns},
+  author={Zhou, Bolei and Khosla, Aditya and Lapedriza, Agata and Oliva, Aude and Torralba, Antonio},
+  journal={arXiv preprint arXiv:1412.6856},
+  year={2014}
+}
+@inproceedings{fong2017interpretable,
+  title={Interpretable explanations of black boxes by meaningful perturbation},
+  author={Fong, Ruth C and Vedaldi, Andrea},
+  booktitle={Proceedings of the IEEE International Conference on Computer Vision},
+  pages={3429--3437},
+  year={2017}
+}
+@article{singla2019explanation,
+  title={Explanation by Progressive Exaggeration},
+  author={Singla, Sumedha and Pollack, Brian and Chen, Junxiang and Batmanghelich, Kayhan},
+  journal={arXiv preprint arXiv:1911.00483},
+  year={2019}
+}
+@article{joshi2018xgems,
+  title={xGEMs: Generating examplars to explain black-box models},
+  author={Joshi, Shalmali and Koyejo, Oluwasanmi and Kim, Been and Ghosh, Joydeep},
+  journal={arXiv preprint arXiv:1806.08867},
+  year={2018}
+}
+@inproceedings{karras2019style,
+  title={A style-based generator architecture for generative adversarial networks},
+  author={Karras, Tero and Laine, Samuli and Aila, Timo},
+  booktitle={Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition},
+  pages={4401--4410},
+  year={2019}
+}
+@article{brock2018large,
+  title={Large scale gan training for high fidelity natural image synthesis},
+  author={Brock, Andrew and Donahue, Jeff and Simonyan, Karen},
+  journal={arXiv preprint arXiv:1809.11096},
+  year={2018}
+}
+\end{filecontents*}
+
+
+\begin{document}
+
+\twocolumn[
+\icmltitle{Classifier-Agnostic Crossing of Decision Boundary under the Image Manifold}
+
+\icmlsetsymbol{equal}{*}
+
+\begin{icmlauthorlist}
+\icmlauthor{Aeiau Zzzz}{equal,to}
+\icmlauthor{Eee Pppp}{ed}
+\end{icmlauthorlist}
+
+\icmlaffiliation{to}{Department of Computation, University of Torontoland, Torontoland, Canada}
+\icmlaffiliation{ed}{School of Computation, University of Edenborrow, Edenborrow, United Kingdom}
+
+\icmlcorrespondingauthor{Cieua Vvvvv}{c.vvvvv@googol.com}
+\icmlcorrespondingauthor{Eee Pppp}{ep@eden.co.uk}
+
+% You may provide any keywords that you
+% find helpful for describing your paper; these are used to populate
+% the "keywords" metadata in the PDF but will not be shown in the document
+\icmlkeywords{Machine Learning, ICML}
+
+\vskip 0.3in
+]
+
+\begin{abstract}
+ 
+\end{abstract}
+
+\section{Introduction}
+
+% why interpretability/explainability is important?
+Understanding the behaviour of complex machine learning predictors is important for debugging and for improving their performance and robustness. Moreover, such understanding can help flag hidden bises in the data (Cramer 2018) and evaluate the fairness of the model (Doshi-Velez and Kim, 2017), and build trust in the system [XX]. However, even if a classifier has 100\% accuracy for a given class, it could still fail to understand that particular concept. For example, if all images of a polar bear exhibit a white background, the classifier can learn to make the decision based on the background pixels. 
+
+% Types of visualisers/interpreters
+Saliency methods \cite{simonyan2013deep,springenberg2014striving,selvaraju2016grad,smilkov2017smoothgrad} are popular tools for interpreting predictors by highlighting the most important features in an image that results in the given classification. While saliency methods have proven useful for a variety of applications [XX], some of them were shown to be agnostic to the predictor model and hence cannot help with debugging \cite{adebayo2018sanity}. Other methods have relied on local occlusions or perturbations to the input (\cite{zhou2014object}, \cite{fong2017interpretable}) Other methods have focused on counterfactual explanations \cite{wachter2017counterfactual,goyal2019counterfactual}, tring to show in what way does the input need to change in order to be assigned a different class. 
+
+
+The work we present here is most related to the work of \cite{singla2019explanation,joshi2018xgems}, which from a given starting image, try to find a series of ``natural'' images that cross the boundary of the black box classifier. One drawback of \cite{singla2019explanation} is that they require re-training the generator every time the black-box classifier is changed, which is something that can happen often, especially when debugging. For example, one can imagine using such a visualisation tool to find useful data augmentation strategies. If generator re-training takes long, this can impede its usefulness. Furthermore, this also prohibits the use of state-of-the-art image generators such as \cite{karras2019style,brock2018large}, that require large amounts of computational resources. 
+
+In our work we re-define the problem and simplify the formulation of \cite{singla2019explanation}. More precisely, we assume a fixed, pre-trained generator $G$ that can generate realistic images. Our aim is to further few
+
+
+
+\section{Method}
+
+
+We assume a black box classifier $f: X \to R$, an initial input image $x \in X$, and a target class $C$. Without loss of generality, we assume the classifier is binary and that $f(x) \in [0,1]$ is the probability of assigning $x$ to target class $C$. Moreover, compared to \cite{singla2019explanation}, we also assume a fixed, pre-trained generator $G: Z \to X$, generating realistic images. We aim to find a trajectory of synthetic images $\textbf{x} = (x_1, ..., x_T)$ corresponding to latent points $\bz = (z_1, ..., z_T)$, $z_i \in Z$ such that:
+\begin{itemize}
+ \item \textbf{Monotonicity}: the trajectory monotonically converges towards the target class $C$: $f(z_t+1) > f(z_{t})$
+ \item \textbf{Identity preservation}: latent points $z_t$ are as close as possible to the embedding of the source image $G^{-1}(x)$. For example in computer vision or medical imaging, this helps preserve the identity of the person studied, ensuring only minimal changes are made in order to change the label of the point to target class $C$.
+\end{itemize}
+
+
+\section{Option 1: Gradient descent along the classifier softmax}
+
+$z_{t+1} = z_t + \eta \nabla f(G(z_t))$
+
+
+\section{Option 2: Reguarised optimisation}
+
+\newcommand{\bz}{\textbf{z}}
+
+
+
+We define a ``step'' loss on classifier $f$, ensuring that 
+\begin{equation}
+L_f(\bz) = \sum_{t=1}^{T-1} |f(G(z_{t+1})) - \frac{t}{T}| 
+\end{equation}
+
+\begin{equation}
+L_id(\bz) = \sum_{t=1}^{T-1} |G^{-1}(x) - G(z_t)| 
+\end{equation}
+
+
+\begin{equation}
+L(\bz) = L_f(\bz) + \lambda L_id(\bz) 
+\end{equation}
+
+
+
+\bibliography{bibliography}
+\bibliographystyle{icml2019}
+
+
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% DELETE THIS PART. DO NOT PLACE CONTENT AFTER THE REFERENCES!
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% \appendix
+% \section{Do \emph{not} have an appendix here}
+% 
+% \textbf{\emph{Do not put content after the references.}}
+% %
+% Put anything that you might normally include after the references in a separate
+% supplementary file.
+% 
+% We recommend that you build supplementary material in a separate document.
+% If you must create one PDF and cut it up, please be careful to use a tool that
+% doesn't alter the margins, and that doesn't aggressively rewrite the PDF file.
+% pdftk usually works fine. 
+% 
+% \textbf{Please do not use Apple's preview to cut off supplementary material.} In
+% previous years it has altered margins, and created headaches at the camera-ready
+% stage. 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+\end{document}
+
+
