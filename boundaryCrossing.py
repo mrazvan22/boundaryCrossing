@@ -58,16 +58,18 @@ class MNISTGan(GeneratorBC):
             self.G = self.G.cuda()
 
     def generate(self, z):
-        fake_images = self.G(self.convOneImg(z))
+        print('z.shape',z.shape)
+        convImg = self.convOneImg(z)
+        # print(convImg)
+        print('convImg.shape', convImg.shape)
+        fake_images = self.G(convImg)
         fake_images_np = fake_images.cpu().detach().numpy()
         fake_images_np = fake_images_np.reshape(fake_images_np.shape[0], 28, 28)
         return fake_images_np
 
     def convOneImg(self, z):
         ''' converts the input to the right format for the generator '''
-        print(z.reshape((1, -1, 1, 1), np.double))
-        # asda
-        convImg = torch.tensor(z.reshape((1, -1, 1, 1), np.double), dtype=torch.float)
+        convImg = z.reshape((z.shape[0], z.shape[1], 1, 1))
         return convImg
 
 
