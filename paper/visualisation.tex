@@ -148,6 +148,19 @@
   journal={arXiv preprint arXiv:1907.03077},
   year={2019}
 }
+@inproceedings{danks2019value,
+  title={The Value of Trustworthy AI},
+  author={Danks, David},
+  booktitle={Proceedings of the 2019 AAAI/ACM Conference on AI, Ethics, and Society},
+  pages={521--522},
+  year={2019}
+}
+@article{mothilal2019explaining,
+  title={Explaining machine learning classifiers through diverse counterfactual explanations},
+  author={Mothilal, Ramaravind Kommiya and Sharma, Amit and Tan, Chenhao},
+  journal={arXiv preprint arXiv:1905.07697},
+  year={2019}
+}
 \end{filecontents*}
 
 
@@ -184,14 +197,14 @@
 \section{Introduction}
 
 % why interpretability/explainability is important?
-Understanding the behavior of complex machine learning predictors is important for debugging and for improving their performance and robustness. However, performance alone is not enough -- even if a classifier has 100\% accuracy for a given class, it could still fail to understand that particular class or concept. For example, if all images of a polar bear exhibit a white background, the classifier can learn to make the decision based on the background pixels. Therefore, methods that \emph{interpret} what the classifier learned can help flag hidden biases in the data \cite{buolamwini2018gender}, evaluate the fairness of the model \cite{doshi2017towards}, and build trust in the system [XX]. 
+Understanding the behavior of complex machine learning predictors is important for debugging and for improving their accuracy and robustness. However, performance alone is not enough -- even if a classifier has 100\% accuracy for a given class, it could still fail to understand that particular class or concept. For example, if all images of a polar bear exhibit a snowy background, the classifier can learn to make the decision based on the background pixels. Therefore, methods that \emph{interpret} what the classifier learned can help flag hidden biases in the data \cite{buolamwini2018gender}, evaluate the fairness of the model \cite{doshi2017towards}, and build trust in the system \cite{danks2019value}. 
 
 % Types of visualisers/interpreters
-Saliency methods \cite{simonyan2013deep,springenberg2014striving,selvaraju2016grad,smilkov2017smoothgrad} are popular tools for interpreting predictors by highlighting the most important features in an image yielding the given classification. While saliency methods have proven useful for a variety of applications [XX], some of them were shown to be agnostic to the predictor model and hence cannot help with debugging \cite{adebayo2018sanity}. 
+Saliency methods \cite{simonyan2013deep,springenberg2014striving,selvaraju2016grad,smilkov2017smoothgrad} are popular tools for interpreting predictors by highlighting the most important features in an image yielding the given classification. While saliency methods have proven useful for a variety of applications [XX], some of them are shown to be agnostic to the predictor model and hence cannot help with debugging \cite{adebayo2018sanity}. 
 
-Non-salient methods of interpretability have also been developed, that rely on local occlusions or perturbations to the input \cite{zhou2014object,fong2017interpretable}. Yet another class of methods have focused on counterfactual explanations \cite{wachter2017counterfactual,goyal2019counterfactual}, trying to show in what way does the input need to change in order to be assigned a different class. However, one disadvantage of these methods is that such perturbations are not guaranteed to generate realistic looking images, which diminishes their usefulness for end users (e.g. clinicians) \cite{singla2019explanation}.
+Non-salient methods of interpretability have also been developed, that rely on local occlusions or perturbations to the input \cite{zhou2014object,fong2017interpretable}. Yet another class of methods have focused on counterfactual explanations \cite{wachter2017counterfactual,goyal2019counterfactual,mothilal2019explaining}, trying to show in what way does the input need to change in order to be assigned a different class. However, one disadvantage of these methods is that such perturbations are not guaranteed to generate realistic images, which diminishes their usefulness for end users (e.g. clinicians) \cite{singla2019explanation}.
 
-Recently, some methods \cite{singla2019explanation,samangouei2018explaingan,liu2019generative} have used generative adversarial netoworks (GANs) in order to explore the image manifold and use it to interpret black-box classifier results. However, the design is sub-optimal as it requires re-training the GAN every time the black-box classifier is modified, which is something that can happen often, especially when debugging through progressive refinement. This is especially difficult for state-of-the-art \cite{karras2019style,brock2018large} generators that are complex to train and require large ammounts of computational power. While \cite{joshi2018xgems} employ variational-autoencoders which are easier to train, they do not yield realistic looking images.
+Recently, some methods \cite{singla2019explanation,samangouei2018explaingan,liu2019generative} have used generative adversarial netoworks (GANs) in order to explore the image manifold and use it to interpret black-box classifier results. However, the design is sub-optimal as it requires re-training the GAN every time the black-box classifier is modified, which is something that can happen often, especially when debugging through progressive refinement. This is especially difficult for state-of-the-art \cite{karras2019style,brock2018large} generators that are complex to train and require large ammounts of computational power. While \cite{joshi2018xgems} employ variational-autoencoders which are easier to train, they do not yield realistic images.
 
 We propose a method for visualising a black-box classifier by generating realistic images that cross the classifier's decision boundary. More precisely, we assume a fixed, pre-trained generator $G$ that can generate realistic images. This makes our work applicable not only for uncovering biases in the classifier, but also for debugging and improving its performance through progressive refinement. Since our method does not require training the generator, we can also use pre-trained off-the-shelf generators available online. 
 
@@ -211,7 +224,7 @@ We propose a method for visualising a black-box classifier by generating realist
 \section{Method}
 
 
-We assume a black box classifier $f: X \to R$, an initial input image $x \in X$, and a target class $C$. Without loss of generality, we assume the classifier is binary and that $f(x) \in [0,1]$ is the probability of assigning $x$ to target class $C$. Moreover, compared to \cite{singla2019explanation}, we also assume a fixed, pre-trained generator $G: Z \to X$, generating realistic images. We aim to find a trajectory of $T$ synthetic images $\textbf{x} = (x_1, ..., x_T)$ corresponding to latent points $\bz = (z_1, ..., z_T)$, $z_i \in Z$ such that:
+We assume a black box classifier $f: X \to R$, an initial input image $x \in X$, and a target class $C$. Without loss of generality, we assume the classifier is binary and that $f(x) \in [0,1]$ is the probability of assigning $x$ to target class $C$. Moreover, compared to \cite{singla2019explanation}, we also assume a fixed, pre-trained generator $G: Z \to X$, generating realistic images. We aim to find a trajectory of $T$ synthetic images $\textbf{x} = (x_1, ..., x_T)$ corresponding to latent points $\bz = (z_1, ..., z_T)$, $z_i \in Z$ satisfying the following conditions:
 \begin{itemize}
  \item \textbf{Monotonicity}: the trajectory monotonically converges towards the target class $C$: $f(z_t+1) > f(z_{t})$
  \item \textbf{Identity preservation}: latent points $z_t$ are as close as possible to the embedding of the source image $G^{-1}(x)$. For example in computer vision or medical imaging, this helps preserve the identity of the person studied, ensuring only minimal changes are made in order to change the label of the point to target class $C$.
@@ -222,15 +235,18 @@ We assume a black box classifier $f: X \to R$, an initial input image $x \in X$,
 
 Without loss of generality, assume $f(x) = 0$. Start with initial point $z_0 = G^{-1}(x)$ and generate points $z_{t+1}$ as follows:
 
-$z_{t+1} = z_t + \eta \nabla f(G(z_t))$
+\begin{equation}
+z_{t+1} = z_t + \eta \nabla f(G(z_t))
+\end{equation}
+
 
 
 \section{Option 2: Reguarised optimisation}
 
 
-We define a ``step'' loss on classifier $f$, ensuring that the target value corresponding to $z_{t}$ is $\frac{t}{T}$: 
+We define a ``softmax'' loss on classifier $f$, ensuring that the $f(G(z_t))$ is $\frac{t}{T}$: 
 \begin{equation}
-L_f(\bz) = \sum_{t=1}^{T-1} |f(G(z_{t+1})) - \frac{t}{T}| 
+L_f(\bz) = \sum_{t=1}^{T} |f(G(z_{t})) - \frac{t}{T}| 
 \end{equation}
 
 The above loss ensures monotonicity in the assignment of $f$ to class $C$ as we progress along the image manifold. We further define an identity preservation loss, e.g. to ensure that the anatomy of the subject provided in image $x$ is preserved:
