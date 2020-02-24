@@ -100,7 +100,7 @@ class MNISTGan(GeneratorBC):
 
     optimizer = optim.Adam([zCurr], lr=0.05)
 
-    for i in range(1000):
+    for i in range(400):
       optimizer.zero_grad()
       output = self.G(self.convOneImg(zCurr))
       loss = torch.nn.L1Loss()
@@ -175,23 +175,24 @@ class VisualiserBC(object):
     # discriminator(image_x) is a scalar, where higher number represents target class.
     self.discriminator = discriminator
 
-    # self.targetExemplarImgs = targetExemplarImgs
+    self.targetExemplarImgs = targetExemplarImgs
     self.targetExemplarLatents = torch.empty((targetExemplarImgs.shape[0], self.generator.lenZ),
                                              requires_grad=False)
     for i in range(targetExemplarImgs.shape[0]):
-      self.targetExemplarLatents[i,:] = self.generator.invertImage(targetExemplarImgs[i,:])
+      self.targetExemplarLatents[i,:] = self.generator.invertImage(targetExemplarImgs[i,:,:])
 
     self.targetExemplarLatents = self.targetExemplarLatents.new_tensor(
-      data=self.targetExemplarLatents.data.numpy(), requires_grad=True, device='cuda')
+      data=self.targetExemplarLatents.data.numpy(), requires_grad=False, device='cuda')
 
+    self.nrTargetExemplars = self.targetExemplarLatents.shape[0]
 
 
   def initProgLatent(self, initImg):
     initZ = self.generator.invertImage(initImg)
-    nrImg = 1
+    nrProgImgs = 3
 
     # progLatent = torch.tensor(np.zeros((nrImg, self.generator.lenZ), np.double), dtype=torch.float, requires_grad=True)
-    progLatent = torch.empty((nrImg, self.generator.lenZ))
+    progLatent = torch.empty((nrProgImgs, self.generator.lenZ))
 
     # zCurr.requires_grad_()
     # for param in self.G.parameters():
@@ -207,9 +208,9 @@ class VisualiserBC(object):
     # lossValue = loss(xCuda, predScore)
     predScore.backward()
 
-    stepSize = 0.02
+    stepSize = 0.2
     # progLatent[0, :] = initZ
-    for i in range(nrImg):
+    for i in range(nrProgImgs):
       progLatent[i, :] = initZ - initZ.grad.data * stepSize * i
 
     progLatent = progLatent.new_tensor(data=progLatent.data.numpy(),
@@ -223,17 +224,26 @@ class VisualiserBC(object):
     return progLatent
 
   def estimZpoints(self, initImg):
+
+    outFld = 'generated/mnistGan'
+    os.system('mkdir -p %s' % outFld)
+
     initImg = initImg.cuda()
     # targetImg = targetImg.cuda()
-    progLatent = self.initProgLatent(initImg)
-    initLatent = progLatent[0,:].clone().detach().requires_grad_(False)
-    nrProgImgs = progLatent.shape[0]
+    progLatentPL = self.initProgLatent(initImg)
+    # initLatent = progLatent[0,:].clone().detach().requires_grad_(False)
+    initLatent = self.generator.invertImage(initImg).requires_grad_(False)
+    # initLatent = initLatent.new_tensor(data=initLatent.cpu().data.numpy(),
+    #                                    requires_grad=False, device='cuda')
+    # print(initLatent.grad)
+    # asd
+    nrProgImgs = progLatentPL.shape[0]
     # targetImgVectPTL - prog_images x target_images x lat_dim
-    targetImgVectPTL = self.targetExemplarLatents.repeat(nrProgImgs, 1, 1)
+    targetsLatentPTL = self.targetExemplarLatents.repeat(nrProgImgs, 1, 1)
     initImgVectPDD = initImg.repeat(nrProgImgs, 1, 1)
     initLatentVectPL = initLatent.repeat(nrProgImgs, 1)
 
-    progLatent.requires_grad = True
+    progLatentPL.requires_grad = True
     for param in self.generator.parameters():
       param.requires_grad = False
 
@@ -241,24 +251,44 @@ class VisualiserBC(object):
       param.requires_grad = False
 
     # progLatent = progLatent.cuda()
-    optimizer = optim.SGD([progLatent], lr=0.00001, momentum=0.9)
-    # lambda_id = float(1) / (nrImg * initImg.shape[0] * initImg.shape[1])
+    optimizer = optim.SGD([progLatentPL], lr=0.1, momentum=0.9)
+    lambdaF = 1
     lambdaId = 0
-    lambdaTarget = 1
-    # print('lambda_id', lambda_id)
-    lossF = nn.L1Loss()
+    lambdaTarget = 0.1
+    lossF = nn.L1Loss() # actually MAE loss
     lossId = nn.L1Loss()
     lossTarget = nn.L1Loss()
 
-    predScores = self.discriminator(self.generator(progLatent), printShape=False)
+    predScores = self.discriminator(self.generator(progLatentPL), printShape=False)
     targetScores = torch.tensor(np.array(range(1,nrProgImgs+1)) / nrProgImgs, dtype=predScores.dtype).cuda()
     print('targetScores', targetScores)
-    # asda
+    print('self.targetExemplarImgs.shape', self.targetExemplarImgs.shape)
 
-    for i in range(1000):
+    for t in range(self.nrTargetExemplars):
+      print('disc(targets):', self.discriminator(self.targetExemplarImgs[t,:,:].view(
+        1,1,self.targetExemplarImgs.shape[1], self.targetExemplarImgs.shape[2]).cuda()))
+      print('disc(targetLatent):', self.discriminator(self.generator(self.targetExemplarLatents[t, :])))
 
+    print('disc(initImg):', self.discriminator.model(initImg.view(1,1,initImg.shape[0], initImg.shape[1]).cuda()))
+    print('discNorm(initImg):', self.discriminator(initImg.view(1,1,initImg.shape[0], initImg.shape[1]).cuda()))
+
+      # print('loss two targets:', lossTarget(targetsLatentPTL[0,0,:], targetsLatentPTL[0,t,:]))
+
+    # for t in range(self.nrTargetExemplars):
+    #   print('loss latent targets:', lossTarget(progLatentPL[0,:], targetsLatentPTL[0,t,:]))
+
+    self.visDirectTransitionInitTarget(initLatent, self.targetExemplarLatents[0,:].view(1,-1))
+
+    lossTargetVals = [0 for x in range(self.nrTargetExemplars)]
+
+    nrIter = 1000
+    progZeroTraceIL = torch.empty((nrIter, self.generator.lenZ), requires_grad = False, device = 'cuda')
+
+    for i in range(nrIter):
+
+      progZeroTraceIL[i,:] = progLatentPL[0,:]
       # self.showZpoints(progLatent, initImg)
-      genImgs = self.generator(progLatent)
+      genImgs = self.generator(progLatentPL)
       predScores = self.discriminator(genImgs, printShape=False)
 
       # print('targetScores', targetScores.shape)
@@ -271,19 +301,24 @@ class VisualiserBC(object):
       # assert initImgVect.shape[1] == initImg.shape[0]
       lossFVal = lossF(predScores, targetScores)
       lossIdVal = lossId(initImgVectPDD, genImgs)
-      print(initImgVectPDD.shape)
-      print(targetImgVectPTL[:,0,:].shape)
-      lossTargetVal = 0
-      for t in range(self.targetExemplarLatents.shape[0]):
-        lossTargetVal += lossTarget(initLatentVectPL, targetImgVectPTL[:,t,:])
+      # print(initImgVectPDD.shape)
+      # print(targetImgVectPTL[:,0,:].shape)
+      for t in range(self.nrTargetExemplars):
+        lossTargetVals[t] = lossTarget(progLatentPL, targetsLatentPTL[:,t,:])
 
-      print('---------')
+      lossTargetValMean = torch.mean(torch.stack(lossTargetVals))
+
+      print('i=%d ---------' % i)
       print('predScores', predScores)
       print('lossFVal', lossFVal)
-      print('lambda_id * lossIdVal', lambdaId * lossIdVal)
+      if lambdaId > 0:
+        print('lossIdVal', lossIdVal)
+      print('lossTargetVals', lossTargetVals)
+      print('lossTargetValMean', lossTargetValMean)
+      # print('lambda_id * lossIdVal', lambdaId * lossIdVal)
 
       # lossVal = lossFVal + lambdaId * lossIdVal + lambdaTarget * lossTargetVal
-      lossVal = lossFVal + lambdaId * lossIdVal + lambdaTarget * lossTargetVal
+      lossVal = lambdaF * lossFVal + lambdaId * lossIdVal + lambdaTarget * lossTargetValMean
 
       print('lossVal', lossVal)
 
@@ -291,20 +326,50 @@ class VisualiserBC(object):
       lossVal.backward()
       optimizer.step()
 
-    # print('latent_prog[0,:,:,:]', progLatent[0, :])
-    # print('latent_prog[1,:,:,:]', progLatent[1, :])
-    # print('size latent_prog', progLatent.shape)
+      if (i % (nrIter/100)) == 0:
+        pass
+        self.showZpoints(progLatentPL, initImg,
+                       fileName = '%s/mnist_%.3d' % (outFld, i))
 
-    return progLatent
+    return progLatentPL
+
+  def visDirectTransitionInitTarget(self, initLatent, targetLatent):
+    nrImg = 10
+    initImg = self.generator.genAsImg(initLatent)[0,:,:]
+    targetImg = self.generator.genAsImg(targetLatent)[0,:,:]
+    initScore = self.discriminator(self.generator(initLatent))
+    targetScore = self.discriminator(self.generator(targetLatent))
+
+    R, C = 3, 5
+    pl.subplot(R, C, 1)
+    pl.imshow(initImg, cmap='gray')
+    pl.gca().title.set_text('Init = %.3f' % initScore)
+    pl.subplot(R, C, 2)
+    pl.imshow(targetImg, cmap='gray')
+    pl.gca().title.set_text('Target = %.3f' % targetScore)
+
+    vectorDir = targetLatent - initLatent
+
+    for i in range(nrImg):
+      inBetweenLat = initLatent + vectorDir * float(i)/nrImg
+      inBetweenImg = self.generator.genAsImg(inBetweenLat)[0,:,:]
+      predScore = self.discriminator(self.generator(inBetweenLat))
+
+      pl.subplot(R, C, i + 3)
+      pl.imshow(inBetweenImg, cmap='gray')
+      pl.gca().title.set_text('s = %f' % predScore)
 
 
-  def showZpoints(self, progLatent, initImg):
+    fig = pl.gcf()
+    pl.show()
+
+  def showZpoints(self, progLatent, initImg, fileName = None):
     nrImg = progLatent.shape[0]
     fake_images_np = self.generator.genAsImg(progLatent)
 
     R, C = 3, 5
     pl.subplot(R, C, 1)
-    pl.imshow(initImg, cmap='gray')
+    pl.imshow(initImg.cpu(), cmap='gray')
     pl.gca().title.set_text('Original')
 
     for i in range(nrImg):
@@ -312,12 +377,20 @@ class VisualiserBC(object):
       pl.imshow(fake_images_np[i], cmap='gray')
       pl.gca().title.set_text('n = %d' % (i+1))
 
+    for i in range(self.nrTargetExemplars):
+      pl.subplot(R, C, i + nrImg + 2)
+      pl.imshow(self.targetExemplarImgs[i].cpu(), cmap='gray')
+      pl.gca().title.set_text('target %d' % (i+1))
+
     fig = pl.gcf()
-    pl.show()
+    if fileName is not None:
+      fig.savefig(fileName, dpi=150)
+    else:
+      pl.show()
 
   def visualise(self, initImg):
     progLatent = self.estimZpoints(initImg)
-    # self.showZpoints(progLatent, initImg)
+    self.showZpoints(progLatent, initImg)
 
 
 
