@@ -100,7 +100,7 @@ class MNISTGan(GeneratorBC):
 
     optimizer = optim.Adam([zCurr], lr=0.05)
 
-    for i in range(400):
+    for i in range(1000):
       optimizer.zero_grad()
       output = self.G(self.convOneImg(zCurr))
       loss = torch.nn.L1Loss()
@@ -264,10 +264,10 @@ class VisualiserBC(object):
     print('targetScores', targetScores)
     print('self.targetExemplarImgs.shape', self.targetExemplarImgs.shape)
 
-    for t in range(self.nrTargetExemplars):
-      print('disc(targets):', self.discriminator(self.targetExemplarImgs[t,:,:].view(
-        1,1,self.targetExemplarImgs.shape[1], self.targetExemplarImgs.shape[2]).cuda()))
-      print('disc(targetLatent):', self.discriminator(self.generator(self.targetExemplarLatents[t, :])))
+    # for t in range(self.nrTargetExemplars):
+    #   print('disc(targets):', self.discriminator(self.targetExemplarImgs[t,:,:].view(
+    #     1,1,self.targetExemplarImgs.shape[1], self.targetExemplarImgs.shape[2]).cuda()))
+      # print('disc(targetLatent):', self.discriminator(self.generator(self.targetExemplarLatents[t, :])))
 
     print('disc(initImg):', self.discriminator.model(initImg.view(1,1,initImg.shape[0], initImg.shape[1]).cuda()))
     print('discNorm(initImg):', self.discriminator(initImg.view(1,1,initImg.shape[0], initImg.shape[1]).cuda()))
@@ -277,7 +277,9 @@ class VisualiserBC(object):
     # for t in range(self.nrTargetExemplars):
     #   print('loss latent targets:', lossTarget(progLatentPL[0,:], targetsLatentPTL[0,t,:]))
 
-    self.visDirectTransitionInitTarget(initLatent, self.targetExemplarLatents[0,:].view(1,-1))
+    self.visDirectTransitionInitTarget(initLatent, self.targetExemplarLatents[0,:].view(1,-1),
+                                       fileName = '%s/mnist_directTransition.png' % outFld)
+    asda
 
     lossTargetVals = [0 for x in range(self.nrTargetExemplars)]
 
@@ -329,16 +331,18 @@ class VisualiserBC(object):
       if (i % (nrIter/100)) == 0:
         pass
         self.showZpoints(progLatentPL, initImg,
-                       fileName = '%s/mnist_%.3d' % (outFld, i))
+                       fileName = '%s/mnist_%.3d.png' % (outFld, i))
 
     return progLatentPL
 
-  def visDirectTransitionInitTarget(self, initLatent, targetLatent):
+  def visDirectTransitionInitTarget(self, initLatent, targetLatent, fileName):
     nrImg = 10
     initImg = self.generator.genAsImg(initLatent)[0,:,:]
     targetImg = self.generator.genAsImg(targetLatent)[0,:,:]
     initScore = self.discriminator(self.generator(initLatent))
     targetScore = self.discriminator(self.generator(targetLatent))
+
+    fig = pl.figure(figsize=(10,7))
 
     R, C = 3, 5
     pl.subplot(R, C, 1)
@@ -357,11 +361,12 @@ class VisualiserBC(object):
 
       pl.subplot(R, C, i + 3)
       pl.imshow(inBetweenImg, cmap='gray')
-      pl.gca().title.set_text('s = %f' % predScore)
+      pl.gca().title.set_text('s = %.3f' % predScore)
 
-
-    fig = pl.gcf()
-    pl.show()
+    if fileName is not None:
+      fig.savefig(fileName, dpi=150)
+    else:
+      pl.show()
 
   def showZpoints(self, progLatent, initImg, fileName = None):
     nrImg = progLatent.shape[0]
