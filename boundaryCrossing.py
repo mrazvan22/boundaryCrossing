@@ -54,40 +54,6 @@ class GeneratorBC(ABC):
   def parameters(self):
     pass
 
-class MNISTGan(GeneratorBC):
-  ''' MNIST GAN visualiser that implements the Generator interface. Add a new class for every
-  new dataset that needs to be visualised. '''
-  def __init__(self):
-    super(MNISTGan, self).__init__()
-
-    # self.D = Discriminator(ngpu=1).eval()
-    self.G = GeneratorGAN(ngpu=1).eval()
-
-    self.lenZ = 100
-
-    # load weights
-    # self.D.load_state_dict(torch.load('gan_pretrained_pytorch/mnist_dcgan/weights/netD_epoch_99.pth'))
-    self.G.load_state_dict(torch.load('gan_pretrained_pytorch/mnist_dcgan/weights/netG_epoch_99.pth'))
-    if torch.cuda.is_available():
-        # self.D = self.D.cuda()
-        self.G = self.G.cuda()
-
-  def __call__(self, z):
-    return self.G(self.convOneImg(z))
-
-  def genAsImg(self, z):
-    fake_images = self.__call__(z)
-    fake_images_np = fake_images.cpu().detach().numpy()
-    return fake_images_np.reshape(fake_images_np.shape[0], 28, 28)
-
-
-  def convOneImg(self, z):
-    ''' converts the input to the right format for the generator '''
-    convImg = z.view((z.shape[0], z.shape[1], 1, 1))
-    return convImg
-
-  def parameters(self):
-    return self.G.parameters()
 
   def invertImage(self, x):
     xCuda = x.cuda()
@@ -113,39 +79,6 @@ class MNISTGan(GeneratorBC):
 
     return zCurr
 
-  # def invertImage(self, x):
-  #   xCuda = x.cuda()
-  #   torch.manual_seed(3)
-  #   zCurr = torch.randn(1, self.lenZ)
-  #   zCurr = zCurr.cuda()
-  #
-  #   # self.showZpoints(zCurr, x)
-  #
-  #   zCurr.requires_grad_()
-  #   for param in self.G.parameters():
-  #     param.requires_grad = False
-  #
-  #   # optimizer = optim.SGD(zCurr, lr=5)
-  #
-  #   import sys
-  #   learning_rate = 5
-  #   for i in range(1000):
-  #     self.G.zero_grad()
-  #     output = self.G(self.convOneImg(zCurr))
-  #     loss = torch.nn.L1Loss()
-  #     lossValue = loss(xCuda,output)
-  #     print('lossValue', lossValue)
-  #
-  #     lossValue.backward()
-  #
-  #     with torch.no_grad():
-  #       # -= performs in-place update. This is important as doing
-  #       # z = z - grad * lr doesn't work, since it zeroes the gradient.
-  #       zCurr -= zCurr.grad.data * learning_rate
-  #
-  #     zCurr.grad.data.zero_()
-  #
-  #   return zCurr
 
   def showZpoints(self, progLatent, initImg):
     nrImg = progLatent.shape[0]
@@ -164,13 +97,78 @@ class MNISTGan(GeneratorBC):
     fig = pl.gcf()
     pl.show()
 
+class MNISTGan(GeneratorBC):
+  ''' MNIST GAN visualiser that implements the Generator interface. Add a new class for every
+  new dataset that needs to be visualised. '''
+  def __init__(self):
+    super(MNISTGan, self).__init__()
+
+    # self.D = Discriminator(ngpu=1).eval()
+    self.G = GeneratorGAN(ngpu=1).eval()
+
+    self.lenZ = 100
+
+    self.lenD1 = 28
+    self.lenD2 = 28
+
+    # load weights
+    # self.D.load_state_dict(torch.load('gan_pretrained_pytorch/mnist_dcgan/weights/netD_epoch_99.pth'))
+    self.G.load_state_dict(torch.load('gan_pretrained_pytorch/mnist_dcgan/weights/netG_epoch_99.pth'))
+    if torch.cuda.is_available():
+        # self.D = self.D.cuda()
+        self.G = self.G.cuda()
+
+  def __call__(self, z):
+    return self.G(self.convOneImg(z))
+
+  def genAsImg(self, z):
+    fake_images = self.__call__(z)
+    fake_images_np = fake_images.cpu().detach().numpy()
+    # if fake_images_np.shape[0] == 1:
+    #   return fake_images_np.reshape(self.lenD1, self.lenD2)
+    # else:
+    return fake_images_np.reshape(fake_images_np.shape[0], self.lenD1, self.lenD2)
+
+
+  def convOneImg(self, z):
+    ''' converts the input to the right format for the generator '''
+    convImg = z.view((z.shape[0], z.shape[1], 1, 1))
+    return convImg
+
+  def parameters(self):
+    return self.G.parameters()
+
+
+class MNISTInfoGan(GeneratorBC):
+  ''' MNIST Info GAN '''
+  def __init__(self):
+    super(MNISTInfoGan, self).__init__()
+
+    # self.D = Discriminator(ngpu=1).eval()
+    self.G = InfoGAN(ngpu=1).eval()
+
+    self.lenZ = 100
+
+    self.lenD1 = 28
+    self.lenD2 = 28
+
+    # load weights
+    # self.D.load_state_dict(torch.load('gan_pretrained_pytorch/mnist_dcgan/weights/netD_epoch_99.pth'))
+    self.G.load_state_dict(torch.load('gan_pretrained_pytorch/mnist_dcgan/weights/netG_epoch_99.pth'))
+    if torch.cuda.is_available():
+        # self.D = self.D.cuda()
+        self.G = self.G.cuda()
+
+
+
 
 
 class VisualiserBC(object):
   ''' Visualiser class. Given a generator and discriminator, estimates a sequence of optimal latent points
   that cross the boundary. '''
-  def __init__(self, generator, discriminator, targetExemplarImgs):
+  def __init__(self, generator, discriminator, targetExemplarImgs, outFld):
     self.generator = generator
+    self.outFld = outFld
 
     # discriminator(image_x) is a scalar, where higher number represents target class.
     self.discriminator = discriminator
@@ -225,8 +223,8 @@ class VisualiserBC(object):
 
   def estimZpoints(self, initImg):
 
-    outFld = 'generated/mnistGan'
-    os.system('mkdir -p %s' % outFld)
+
+    os.system('mkdir -p %s' % self.outFld)
 
     initImg = initImg.cuda()
     # targetImg = targetImg.cuda()
@@ -264,9 +262,9 @@ class VisualiserBC(object):
     print('targetScores', targetScores)
     print('self.targetExemplarImgs.shape', self.targetExemplarImgs.shape)
 
-    # for t in range(self.nrTargetExemplars):
-    #   print('disc(targets):', self.discriminator(self.targetExemplarImgs[t,:,:].view(
-    #     1,1,self.targetExemplarImgs.shape[1], self.targetExemplarImgs.shape[2]).cuda()))
+    for t in range(self.nrTargetExemplars):
+      print('disc(targets):', self.discriminator(self.targetExemplarImgs[t,:,:].view(
+        1,1,self.targetExemplarImgs.shape[1], self.targetExemplarImgs.shape[2]).cuda()))
       # print('disc(targetLatent):', self.discriminator(self.generator(self.targetExemplarLatents[t, :])))
 
     print('disc(initImg):', self.discriminator.model(initImg.view(1,1,initImg.shape[0], initImg.shape[1]).cuda()))
@@ -278,7 +276,7 @@ class VisualiserBC(object):
     #   print('loss latent targets:', lossTarget(progLatentPL[0,:], targetsLatentPTL[0,t,:]))
 
     self.visDirectTransitionInitTarget(initLatent, self.targetExemplarLatents[0,:].view(1,-1),
-                                       fileName = '%s/mnist_directTransition.png' % outFld)
+                                       fileName = '%s/mnist_directTransition.png' % self.outFld)
     asda
 
     lossTargetVals = [0 for x in range(self.nrTargetExemplars)]
@@ -331,7 +329,7 @@ class VisualiserBC(object):
       if (i % (nrIter/100)) == 0:
         pass
         self.showZpoints(progLatentPL, initImg,
-                       fileName = '%s/mnist_%.3d.png' % (outFld, i))
+                       fileName = '%s/mnist_%.3d.png' % (self.outFld, i))
 
     return progLatentPL
 
@@ -372,22 +370,32 @@ class VisualiserBC(object):
     nrImg = progLatent.shape[0]
     fake_images_np = self.generator.genAsImg(progLatent)
 
-    R, C = 3, 5
-    pl.subplot(R, C, 1)
-    pl.imshow(initImg.cpu(), cmap='gray')
-    pl.gca().title.set_text('Original')
+    subtitlesList = ['Original'] + ['n = %d' % (i+1) for i in range(nrImg)] + \
+      ['target %d' % (i+1)  for i in range(self.nrTargetExemplars)]
 
-    for i in range(nrImg):
-      pl.subplot(R, C, i + 2)
-      pl.imshow(fake_images_np[i], cmap='gray')
-      pl.gca().title.set_text('n = %d' % (i+1))
+    self.showImgs([initImg.cpu().view(1,-1), fake_images_np, self.targetExemplarImgs], subtitlesList, fileName=fileName)
 
-    for i in range(self.nrTargetExemplars):
-      pl.subplot(R, C, i + nrImg + 2)
-      pl.imshow(self.targetExemplarImgs[i].cpu(), cmap='gray')
-      pl.gca().title.set_text('target %d' % (i+1))
 
-    fig = pl.gcf()
+  def showImgs(self, imgsList, subtitlesList, rows=3, cols=5, fileName=None):
+
+    counter = 0
+
+
+    fig = pl.figure()
+
+    for imgs, subtitles in zip(imgsList, subtitlesList):
+      print('imgs.shape', imgs.shape)
+      print('subtitles', subtitles)
+      nrImg = imgs.shape[0]
+      for i in range(nrImg):
+        pl.subplot(rows, cols, counter + 1)
+        pl.imshow(imgs[i], cmap='gray')
+        pl.axis('off')
+        pl.gca().title.set_text(subtitles[i])
+
+        counter += 1
+
+
     if fileName is not None:
       fig.savefig(fileName, dpi=150)
     else:
@@ -398,7 +406,23 @@ class VisualiserBC(object):
     self.showZpoints(progLatent, initImg)
 
 
+  def testGanVsReal(self, dataI0DD):
+    # nrImg = dataI0DD.shape[0]
+    imgsList = []
+    subtitlesList = []
+    for i in range(10):
+      realImg = dataI0DD[i,0,:,:].view(1, dataI0DD.shape[2], dataI0DD.shape[3])
+      zCurr = self.generator.invertImage(realImg[0,:,:])
+      genImg = self.generator.genAsImg(zCurr)
 
+      print('realImg.shape',realImg.shape)
+      print('genImg.shape', genImg.shape)
+
+      imgsList += [realImg, genImg]
+      subtitlesList += [['orig - \'%d\'' % self.discriminator.predMaxLikClass(dataI0DD[i,0,:,:])],
+        ['gan - \'%d\'' % self.discriminator.predMaxLikClass(self.generator(zCurr))]]
+
+    self.showImgs(imgsList, subtitlesList, rows=4, cols=6, fileName= '%s/ganVsReal.png' % self.outFld)
 
 # # Load pre-trained model tokenizer (vocabulary)
 # model = BigGAN.from_pretrained('biggan-deep-256')
