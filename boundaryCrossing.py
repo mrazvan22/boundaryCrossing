@@ -14,6 +14,8 @@ from pytorch_pretrained_biggan.pytorch_pretrained_biggan import (BigGAN, one_hot
 from gan_pretrained_pytorch.mnist_dcgan.dcgan import Discriminator
 from gan_pretrained_pytorch.mnist_dcgan.dcgan import Generator as GeneratorGAN
 
+
+
 # OPTIONAL: if you want to have more information on what's happening, activate the logger as follows
 import logging
 logging.basicConfig(level=logging.INFO)
@@ -144,8 +146,10 @@ class MNISTInfoGan(GeneratorBC):
   def __init__(self):
     super(MNISTInfoGan, self).__init__()
 
+    from PyTorch_GAN.implementations.infogan import Generator as GenInfoGAN
+
     # self.D = Discriminator(ngpu=1).eval()
-    self.G = InfoGAN(ngpu=1).eval()
+    self.G = GenInfoGAN(ngpu=1).eval()
 
     self.lenZ = 100
 
@@ -154,12 +158,10 @@ class MNISTInfoGan(GeneratorBC):
 
     # load weights
     # self.D.load_state_dict(torch.load('gan_pretrained_pytorch/mnist_dcgan/weights/netD_epoch_99.pth'))
-    self.G.load_state_dict(torch.load('gan_pretrained_pytorch/mnist_dcgan/weights/netG_epoch_99.pth'))
+    self.G.load_state_dict(torch.load('PyTorch_GAN/implementations/infogan/generator.pth'))
     if torch.cuda.is_available():
         # self.D = self.D.cuda()
         self.G = self.G.cuda()
-
-
 
 
 
