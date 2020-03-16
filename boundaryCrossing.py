@@ -164,7 +164,6 @@ class MNISTInfoGan(GeneratorBC):
         self.G = self.G.cuda()
 
 
-
 class VisualiserBC(object):
   ''' Visualiser class. Given a generator and discriminator, estimates a sequence of optimal latent points
   that cross the boundary. '''
@@ -235,6 +234,7 @@ class VisualiserBC(object):
     nrProgImgs = progLatentPL.shape[0]
     targetsLatentPTL = self.targetExemplarLatents.repeat(nrProgImgs, 1, 1)
     initImgVectPDD = initImgDD.repeat(nrProgImgs, 1, 1)
+    initLatentVectPL = initLatent.repeat(nrProgImgs, 1)
 
     progLatentPL.requires_grad = True
     for param in self.generator.parameters():
@@ -246,7 +246,7 @@ class VisualiserBC(object):
     # progLatent = progLatent.cuda()
     optimizer = optim.SGD([progLatentPL], lr=0.1, momentum=0.9)
     lambdaF = 1
-    lambdaId = 0
+    lambdaId = 0.1
     lambdaTarget = 0.1
     lossF = nn.L1Loss() # actually MAE loss
     lossId = nn.L1Loss()
@@ -270,7 +270,7 @@ class VisualiserBC(object):
 
     lossTargetVals = [0 for x in range(self.nrTargetExemplars)]
 
-    nrIter = 1000
+    nrIter = 10000
     progZeroTraceIL = torch.empty((nrIter, self.generator.lenZ), requires_grad = False, device = 'cuda')
 
     for i in range(nrIter):
@@ -280,7 +280,12 @@ class VisualiserBC(object):
       predScores = self.discriminator(genImgs, printShape=False)
 
       lossFVal = lossF(predScores, targetScores)
+
+      # lossIdVal = lossId(initImgVectPDD, genImgs) # loss in image space
+      lossIdVal = lossId(initLatentVectPL, progLatentPL) # loss in latent space
+
       lossIdVal = lossId(initImgVectPDD, genImgs)
+
       for t in range(self.nrTargetExemplars):
         lossTargetVals[t] = lossTarget(progLatentPL, targetsLatentPTL[:,t,:])
 
