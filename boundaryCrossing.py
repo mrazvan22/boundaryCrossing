@@ -66,7 +66,7 @@ class GeneratorBC(ABC):
     for param in self.G.parameters():
       param.requires_grad = False
 
-    optimizer = optim.Adam([zCurr], lr=0.05)
+    optimizer = optim.Adam([zCurr], lr=0.1)
 
     for i in range(3000):
       optimizer.zero_grad()
@@ -179,6 +179,7 @@ class VisualiserBC(object):
     self.targetExemplarLatents = torch.empty((targetExemplarImgs.shape[0], self.generator.lenZ),
                                              requires_grad=False)
     for i in range(targetExemplarImgs.shape[0]):
+      print('inverting target exemplar %d' % i)
       self.targetExemplarLatents[i,:] = self.generator.invertImage(targetExemplarImgs[i,:,:])
 
     self.targetExemplarLatents = self.targetExemplarLatents.new_tensor(
@@ -229,19 +230,11 @@ class VisualiserBC(object):
     os.system('mkdir -p %s' % self.outFld)
 
     initImgDD = initImgDD.cuda()
-    # targetImg = targetImg.cuda()
     progLatentPL = self.initProgLatent(initImgDD)
-    # initLatent = progLatent[0,:].clone().detach().requires_grad_(False)
     initLatent = self.generator.invertImage(initImgDD).requires_grad_(False)
-    # initLatent = initLatent.new_tensor(data=initLatent.cpu().data.numpy(),
-    #                                    requires_grad=False, device='cuda')
-    # print(initLatent.grad)
-    # asd
     nrProgImgs = progLatentPL.shape[0]
-    # targetImgVectPTL - prog_images x target_images x lat_dim
     targetsLatentPTL = self.targetExemplarLatents.repeat(nrProgImgs, 1, 1)
     initImgVectPDD = initImgDD.repeat(nrProgImgs, 1, 1)
-    initLatentVectPL = initLatent.repeat(nrProgImgs, 1)
 
     progLatentPL.requires_grad = True
     for param in self.generator.parameters():
@@ -272,14 +265,8 @@ class VisualiserBC(object):
     print('disc(initImg):', self.discriminator.model(initImgDD.view(1, 1, initImgDD.shape[0], initImgDD.shape[1]).cuda()))
     print('discNorm(initImg):', self.discriminator(initImgDD.view(1, 1, initImgDD.shape[0], initImgDD.shape[1]).cuda()))
 
-      # print('loss two targets:', lossTarget(targetsLatentPTL[0,0,:], targetsLatentPTL[0,t,:]))
-
-    # for t in range(self.nrTargetExemplars):
-    #   print('loss latent targets:', lossTarget(progLatentPL[0,:], targetsLatentPTL[0,t,:]))
-
     self.visDirectTransitionInitTarget(initLatent, self.targetExemplarLatents[0,:].view(1,-1),
                                        fileName = '%s/mnist_directTransition.png' % self.outFld)
-    #asda
 
     lossTargetVals = [0 for x in range(self.nrTargetExemplars)]
 
@@ -289,22 +276,11 @@ class VisualiserBC(object):
     for i in range(nrIter):
 
       progZeroTraceIL[i,:] = progLatentPL[0,:]
-      # self.showZpoints(progLatent, initImg)
       genImgs = self.generator(progLatentPL)
       predScores = self.discriminator(genImgs, printShape=False)
 
-      # print('targetScores', targetScores.shape)
-      # print('predScores', predScores.shape)
-      # print()
-      # make sure the predicted scores are [0, ]
-
-      # print(initImgVect.shape)
-      # assert initImgVect.shape[0] == nrImg
-      # assert initImgVect.shape[1] == initImg.shape[0]
       lossFVal = lossF(predScores, targetScores)
       lossIdVal = lossId(initImgVectPDD, genImgs)
-      # print(initImgVectPDD.shape)
-      # print(targetImgVectPTL[:,0,:].shape)
       for t in range(self.nrTargetExemplars):
         lossTargetVals[t] = lossTarget(progLatentPL, targetsLatentPTL[:,t,:])
 
@@ -329,7 +305,7 @@ class VisualiserBC(object):
       optimizer.step()
 
       if (i % (nrIter/100)) == 0:
-        pass
+
         self.showZpoints(progLatentPL, initImgDD,
                          fileName = '%s/mnist_%.3d.png' % (self.outFld, i))
 
@@ -343,6 +319,7 @@ class VisualiserBC(object):
     targetScore = self.discriminator(self.generator(targetLatent))
 
     fig = pl.figure(figsize=(10,7))
+    pl.clf()
 
     R, C = 3, 5
     pl.subplot(R, C, 1)
@@ -370,19 +347,29 @@ class VisualiserBC(object):
 
   def showZpoints(self, progLatent, initImg, fileName = None):
     nrImg = progLatent.shape[0]
-    fake_images_np = self.generator.genAsImg(progLatent)
+    progImgs = self.generator.genAsImg(progLatent)
 
-    subtitlesList = ['Original'] + ['n = %d' % (i+1) for i in range(nrImg)] + \
-      ['target %d' % (i+1)  for i in range(self.nrTargetExemplars)]
+    progScores = self.discriminator(self.generator(progLatent))
 
-    self.showImgs([initImg.cpu().view(1,initImg.shape[1],initImg.shape[0]), fake_images_np, self.targetExemplarImgs], subtitlesList, fileName=fileName)
+    subtitlesList = [['Original']] + [['s(%d) = %.3f' % (i+1, progScores[i]) for i in range(nrImg)]] + \
+      [['target %d' % (i+1)  for i in range(self.nrTargetExemplars)]]
+
+    self.showImgs([initImg.cpu().view(1,initImg.shape[1],initImg.shape[0]), progImgs, self.targetExemplarImgs], subtitlesList,
+                  figID = 1, fileName = fileName)
 
 
-  def showImgs(self, imgsList, subtitlesList, rows=3, cols=5, fileName=None):
+  def showImgs(self, imgsList, subtitlesList, rows=3, cols=5, figID=1, fileName=None, ):
 
     counter = 0
 
-    fig = pl.figure()
+    fig = pl.figure(figID)
+    pl.clf()
+
+    print(len(imgsList))
+    print(len(subtitlesList))
+    print('subtitlesList', subtitlesList)
+
+
 
     for imgs, subtitles in zip(imgsList, subtitlesList):
       print('imgs.shape', imgs.shape)
@@ -399,6 +386,10 @@ class VisualiserBC(object):
 
     if fileName is not None:
       fig.savefig(fileName, dpi=150)
+
+      # pl.show()
+      # import pdb
+      # pdb.set_trace()
     else:
       pl.show()
 
