@@ -42,7 +42,7 @@ for idx, (data, target) in enumerate(ds_val):
   print('predClasses', torch.argmax(output,dim=1)[:10])
   print('trueClasses', target[:10])
 
-ada
+#ada
 model = model_raw
 
 ######################
@@ -52,7 +52,7 @@ targetClass = 0
 nrTargetExempImgs = 5
 # dataI0DD.shape = [1000, 1, 28, 28], targetI.shape [1000]
 dataI0DD, targetI = next(iter(ds_val))
-initImg = dataI0DD[0, 0, :, :]
+initImgDD = dataI0DD[0, 0, :, :]
 targetExemplarInd = np.where(targetI.cpu() == targetClass)[0][:nrTargetExempImgs]
 targetExemplarImgs = dataI0DD[targetExemplarInd, 0, :, :]
 
@@ -67,17 +67,17 @@ outFld = 'generated/mnistGan'
 modelTarget = DiscrimTarget(model, targetClass)
 visualiser = VisualiserBC(mnistGen, modelTarget, targetExemplarImgs, outFld)
 
-print(initImg.shape)
-predInit = modelTarget(initImg.view(1, 1, initImg.shape[0], initImg.shape[1]).cuda())
+print(initImgDD.shape)
+predInit = modelTarget(initImgDD.view(1, 1, initImgDD.shape[0], initImgDD.shape[1]).cuda())
 print('model(initImg)', predInit)
 classInit = torch.argmax(predInit)
 print('predClass initImg', classInit)
 print('trueClass initImg', targetI[0])
 
-asda
 
-visualiser.testGanVsReal(dataI0DD)
 
-visualiser.visualise(initImg)
+#visualiser.testGanVsReal(dataI0DD)
+
+visualiser.visualise(initImgDD)
 
 

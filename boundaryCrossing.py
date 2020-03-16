@@ -68,7 +68,7 @@ class GeneratorBC(ABC):
 
     optimizer = optim.Adam([zCurr], lr=0.05)
 
-    for i in range(1000):
+    for i in range(3000):
       optimizer.zero_grad()
       output = self.G(self.convOneImg(zCurr))
       loss = torch.nn.L1Loss()
@@ -82,22 +82,22 @@ class GeneratorBC(ABC):
     return zCurr
 
 
-  def showZpoints(self, progLatent, initImg):
-    nrImg = progLatent.shape[0]
-    fake_images_np = self.genAsImg(progLatent)
-
-    R, C = 3, 5
-    pl.subplot(R, C, 1)
-    pl.imshow(initImg.cpu(), cmap='gray')
-    pl.gca().title.set_text('Original')
-
-    for i in range(nrImg):
-      pl.subplot(R, C, i + 2)
-      pl.imshow(fake_images_np[i], cmap='gray')
-      pl.gca().title.set_text('n = %d' % (i+1))
-
-    fig = pl.gcf()
-    pl.show()
+  # def showZpoints(self, progLatent, initImg):
+  #   nrImg = progLatent.shape[0]
+  #   fake_images_np = self.genAsImg(progLatent)
+  #
+  #   R, C = 3, 5
+  #   pl.subplot(R, C, 1)
+  #   pl.imshow(initImg.cpu(), cmap='gray')
+  #   pl.gca().title.set_text('Original')
+  #
+  #   for i in range(nrImg):
+  #     pl.subplot(R, C, i + 2)
+  #     pl.imshow(fake_images_np[i], cmap='gray')
+  #     pl.gca().title.set_text('n = %d' % (i+1))
+  #
+  #   fig = pl.gcf()
+  #   pl.show()
 
 class MNISTGan(GeneratorBC):
   ''' MNIST GAN visualiser that implements the Generator interface. Add a new class for every
@@ -223,16 +223,16 @@ class VisualiserBC(object):
 
     return progLatent
 
-  def estimZpoints(self, initImg):
+  def estimZpoints(self, initImgDD):
 
 
     os.system('mkdir -p %s' % self.outFld)
 
-    initImg = initImg.cuda()
+    initImgDD = initImgDD.cuda()
     # targetImg = targetImg.cuda()
-    progLatentPL = self.initProgLatent(initImg)
+    progLatentPL = self.initProgLatent(initImgDD)
     # initLatent = progLatent[0,:].clone().detach().requires_grad_(False)
-    initLatent = self.generator.invertImage(initImg).requires_grad_(False)
+    initLatent = self.generator.invertImage(initImgDD).requires_grad_(False)
     # initLatent = initLatent.new_tensor(data=initLatent.cpu().data.numpy(),
     #                                    requires_grad=False, device='cuda')
     # print(initLatent.grad)
@@ -240,7 +240,7 @@ class VisualiserBC(object):
     nrProgImgs = progLatentPL.shape[0]
     # targetImgVectPTL - prog_images x target_images x lat_dim
     targetsLatentPTL = self.targetExemplarLatents.repeat(nrProgImgs, 1, 1)
-    initImgVectPDD = initImg.repeat(nrProgImgs, 1, 1)
+    initImgVectPDD = initImgDD.repeat(nrProgImgs, 1, 1)
     initLatentVectPL = initLatent.repeat(nrProgImgs, 1)
 
     progLatentPL.requires_grad = True
@@ -269,8 +269,8 @@ class VisualiserBC(object):
         1,1,self.targetExemplarImgs.shape[1], self.targetExemplarImgs.shape[2]).cuda()))
       # print('disc(targetLatent):', self.discriminator(self.generator(self.targetExemplarLatents[t, :])))
 
-    print('disc(initImg):', self.discriminator.model(initImg.view(1,1,initImg.shape[0], initImg.shape[1]).cuda()))
-    print('discNorm(initImg):', self.discriminator(initImg.view(1,1,initImg.shape[0], initImg.shape[1]).cuda()))
+    print('disc(initImg):', self.discriminator.model(initImgDD.view(1, 1, initImgDD.shape[0], initImgDD.shape[1]).cuda()))
+    print('discNorm(initImg):', self.discriminator(initImgDD.view(1, 1, initImgDD.shape[0], initImgDD.shape[1]).cuda()))
 
       # print('loss two targets:', lossTarget(targetsLatentPTL[0,0,:], targetsLatentPTL[0,t,:]))
 
@@ -279,7 +279,7 @@ class VisualiserBC(object):
 
     self.visDirectTransitionInitTarget(initLatent, self.targetExemplarLatents[0,:].view(1,-1),
                                        fileName = '%s/mnist_directTransition.png' % self.outFld)
-    asda
+    #asda
 
     lossTargetVals = [0 for x in range(self.nrTargetExemplars)]
 
@@ -330,8 +330,8 @@ class VisualiserBC(object):
 
       if (i % (nrIter/100)) == 0:
         pass
-        self.showZpoints(progLatentPL, initImg,
-                       fileName = '%s/mnist_%.3d.png' % (self.outFld, i))
+        self.showZpoints(progLatentPL, initImgDD,
+                         fileName = '%s/mnist_%.3d.png' % (self.outFld, i))
 
     return progLatentPL
 
@@ -375,13 +375,12 @@ class VisualiserBC(object):
     subtitlesList = ['Original'] + ['n = %d' % (i+1) for i in range(nrImg)] + \
       ['target %d' % (i+1)  for i in range(self.nrTargetExemplars)]
 
-    self.showImgs([initImg.cpu().view(1,-1), fake_images_np, self.targetExemplarImgs], subtitlesList, fileName=fileName)
+    self.showImgs([initImg.cpu().view(1,initImg.shape[1],initImg.shape[0]), fake_images_np, self.targetExemplarImgs], subtitlesList, fileName=fileName)
 
 
   def showImgs(self, imgsList, subtitlesList, rows=3, cols=5, fileName=None):
 
     counter = 0
-
 
     fig = pl.figure()
 
@@ -403,9 +402,9 @@ class VisualiserBC(object):
     else:
       pl.show()
 
-  def visualise(self, initImg):
-    progLatent = self.estimZpoints(initImg)
-    self.showZpoints(progLatent, initImg)
+  def visualise(self, initImgDD):
+    progLatent = self.estimZpoints(initImgDD)
+    self.showZpoints(progLatent, initImgDD)
 
 
   def testGanVsReal(self, dataI0DD):
