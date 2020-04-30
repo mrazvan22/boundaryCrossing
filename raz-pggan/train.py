@@ -70,28 +70,25 @@ def train():
   device = torch.device("cuda:0" if (torch.cuda.is_available() and ngpu > 0) else "cpu")
   print('device ', device)
 
-  for curentRes in posRes:
+  # curRes = current resolution     posRes = list of possible resolutions
+  for curRes in posRes:
+    print('Running at resolution %d x %d' % (curRes, curRes))
 
     transformPIL=transforms.Compose([
-      transforms.Resize(curentRes),
-      transforms.CenterCrop(curentRes),
+      transforms.Resize(curRes),
+      transforms.CenterCrop(curRes),
       transforms.ToTensor(),
       #transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
       ])
 
     transform = cvtransforms.Compose([
-      cvtransforms.Resize(curentRes),
-      cvtransforms.CenterCrop(curentRes),
+      cvtransforms.Resize(curRes),
+      cvtransforms.CenterCrop(curRes),
       cvtransforms.ToTensor(),
     ])
 
-    #randTensor = torch.randn(2544,3056)
-    #print(transforms.Resize(curentRes)(randTensor).shape)
-    #print(transforms.CenterCrop(curentRes)(randTensor).shape)
-    #print(transforms.CenterCrop(curentRes)(randTensor).shape)
-    #print(adas)
 
-    dataset = DataLoaderOptimised.PngDataset(train_images_list, curentRes, transform)
+    dataset = DataLoaderOptimised.PngDataset(train_images_list, curRes, transformPIL)
     
     # Create the DataLoaderOptimised
     loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size,
@@ -113,41 +110,50 @@ def train():
       pl.imshow(np.transpose(vutils.make_grid(real_batch.to(device), padding=2, normalize=True, nrow=8).cpu(),(1,2,0)))
       pl.show()
 
-    # Create the generator
-    netG = Generator(ngpu).to(device)
+    if posRes[0] != 2:
+      # Create the generator
+      netG = Generator(ngpu).to(device)
+    
 
-    # Handle multi-gpu if desired
-    if (device.type == 'cuda') and (ngpu > 1):
-      netG = nn.DataParallel(netG, list(range(ngpu)))
+      # Handle multi-gpu if desired
+      if (device.type == 'cuda') and (ngpu > 1):
+        netG = nn.DataParallel(netG, list(range(ngpu)))
 
-    # Apply the weights_init function to randomly initialize all weights
-    #  to mean=0, stdev=0.2.
-    netG.apply(weights_init)
+      # Apply the weights_init function to randomly initialize all weights
+      #  to mean=0, stdev=0.2.
+      netG.apply(weights_init)
 
-    # Print the model
-    print(netG)
+      # Print the model
+      print(netG)
 
-    # Create the Discriminator
-    netD = Discriminator(ngpu).to(device)
+      # Create the Discriminator
+      netD = Discriminator(ngpu).to(device)
 
-    # Handle multi-gpu if desired
-    if (device.type == 'cuda') and (ngpu > 1):
-      netD = nn.DataParallel(netD, list(range(ngpu)))
+      # Handle multi-gpu if desired
+      if (device.type == 'cuda') and (ngpu > 1):
+        netD = nn.DataParallel(netD, list(range(ngpu)))
 
-    # Apply the weights_init function to randomly initialize all weights
-    #  to mean=0, stdev=0.2.
-    netD.apply(weights_init)
+      # Apply the weights_init function to randomly initialize all weights
+      #  to mean=0, stdev=0.2.
+      netD.apply(weights_init)
 
-    # Print the model
-    print(netD)
+      # Print the model
+      print(netD)
 
 
-    # Initialize BCELoss function
-    criterion = nn.BCELoss()
+      # Initialize loss function
+      criterion = nn.MSELoss()
+
+    else:
+      pass
+      
+
+    netG.module.grow_network()
+    #asd
 
     # Create batch of latent vectors that we will use to visualize
     #  the progression of the generator
-    fixed_noise = torch.randn(64, nz, 1, 1, device=device)
+    fixed_noise = torch.randn(64, ngc, 1, 1, device=device)
 
     # Establish convention for real and fake labels during training
     real_label = 1
@@ -176,6 +182,7 @@ def train():
 
     print('time for loading data', time.time() - start)
 
+
     print("Starting Training Loop...")
     # For each epoch
     for epoch in range(num_epochs):
@@ -193,11 +200,13 @@ def train():
             netD.zero_grad()
             # Format batch
             real_cpu = data.to(device)
+            print('real_cpu.size', real_cpu.size())
           
             b_size = real_cpu.size(0)
             label = torch.full((b_size,), real_label, device=device)
             # Forward pass real batch through D
             output = netD(real_cpu)
+            print('output.size', output.size())
 
             # Calculate loss on all-real batch
             #print('output.shape', output.shape)
@@ -210,12 +219,14 @@ def train():
 
             ## Train with all-fake batch
             # Generate batch of latent vectors
-            noise = torch.randn(b_size, nz, 1, 1, device=device)
+            noise = torch.randn(b_size, ngc, 1, 1, device=device)
             # Generate fake image batch with G
             fake = netG(noise)
+            print('fake.size()', fake.size())
             label.fill_(fake_label)
             # Classify all fake batch with D
             output = netD(fake.detach()).view(-1)
+
             # Calculate D's loss on the all-fake batch
             errD_fake = criterion(output, label)
             # Calculate the gradients for this batch
@@ -263,12 +274,13 @@ def train():
     end = time.time()
     print('time for last epoch', end - start)
     
-    torch.savea({
-      'state_dict' : model.state_dict(),
+    torch.save({
+      'G_state_dict' : netG.state_dict(),
+      'D_state_dict' : netD.state_dict(),
       'G_losses' : G_losses,
-      'D_losses', D_losses,
-      ''
-    }, model_save_paths[cur_res])
+      'D_losses': D_losses,
+      'img_list' : img_list,
+    }, model_save_paths[curRes])
 
     fig = pl.figure(figsize=(10,5))
     pl.title("Generator and Discriminator Loss During Training")
@@ -278,21 +290,23 @@ def train():
     pl.ylabel("Loss")
     pl.legend()
     fig.show()
-    fig.savefig('generated/%d-trainingLoss.png')
+    os.system('mkdir -p generated')
+    fig.savefig('generated/%d-trainingLoss.png' % curRes)
 
     #%%capture
     fig = pl.figure(figsize=(8,8))
     pl.axis("off")
     ims = [[pl.imshow(np.transpose(i,(1,2,0)), animated=True)] for i in img_list]
     ani = animation.ArtistAnimation(fig, ims, interval=1000, repeat_delay=1000, blit=True)
+    animation.save('generated/%d-animation.gif' % curRes, writer='imagemagick', fps=1)
 
-    HTML(ani.to_jshtml())
+    #HTML(ani.to_jshtml())
 
     # Grab a batch of real images from the DataLoaderOptimised
     real_batch = dataBatches[0]
 
     # Plot the real images
-    pl.figure(figsize=(15,15))
+    fig = pl.figure(figsize=(15,15))
     pl.subplot(1,2,1)
     pl.axis("off")
     pl.title("Real Images")
@@ -303,7 +317,8 @@ def train():
     pl.axis("off")
     pl.title("Fake Images")
     pl.imshow(np.transpose(img_list[-1],(1,2,0)))
-    pl.show()
+    fig.show()
+    fig.savefig('generated/%d-fake.png' % curRes)
 
 
 

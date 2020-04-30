@@ -56,8 +56,8 @@ class PngDataset(data.Dataset):
       start = time.time()
       print('loading %s' % (imageFile))
 
-    #img = Image.open(imageFile)
-    img = cv2.imread(imageFile)
+    img = Image.open(imageFile)
+    #img = cv2.imread(imageFile)
     if doPrint:
       end = time.time()
       print('time elapsed opening:', end - start)    
