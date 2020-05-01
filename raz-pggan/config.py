@@ -5,37 +5,45 @@
 train_images_list = "xray_pngs.csv" # all 360k
 
 # list of possible resolutions
-posRes = [4,8,16,32,64,128,256,512,1024]
+posResX = [4,8,16,32,64,128,256,512,1024]
 #posRes = [64,128,256,512,1024]
+posResY = posResX
+nrLevels = len(posResX)
+
+
+startResLevel = 1 # starting resolution level
 
 # model save path
-model_save_paths = dict([(x, 'generated/%d-model.pt' % x ) for x in posRes])
+model_save_paths = ['generated/l%d-model-%dx%d.pt' % (i, posResX[i], posResY[i]) for i in range(nrLevels)]
 
-# Number of workers for dataloader
-workers = 2
+# Number of workers for dataloader, for each growth level
+workers = [0,0,10,10,10,10,10,10,10]
 
 # Batch size during training
-batch_size = 64
+batch_size = [10,10,1024,1024,1024,256,64,16,4]
 
 # for running tests on a subset of the data (max = 369,000)
 nr_imgs_to_load = 100
 
-# Spatial size of training images. All images will be resized to this
-#   size using a transformer.
-image_size = 4
+keepBatchesInMemory = [True, True, True, True, True, True, True, True, True]
 
 # Number of channels in the training images. For grayscale X-ray images this is 1
 nc = 1 
 
 
-# number of channels in initial layer of generator (equal to dimension of latent vector)
-ngc = 64
+# number of channels at each layer of generator (first is the dimension of latent vector)
+ngc = [512, 512, 512, 512, 256, 128, 64, 32, 16]
 
-# number of channels in final layer of discriminator 
-ndc = 64
+# number of channels at each layer of discriminator 
+ndc = [32, 64, 128, 256, 512, 512, 512, 512, 512]
+
+latDim = ngc[0] # dimension of latent vector
+
+assert nrLevels == len(ngc)
+assert nrLevels == len(ndc)
 
 # Number of training epochs
-num_epochs = 30
+num_epochs = 20
 
 # Learning rate for optimizers
 lr = 0.0002
