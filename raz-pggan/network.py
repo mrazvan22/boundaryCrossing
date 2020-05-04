@@ -1,5 +1,5 @@
 import torch.nn as nn
-from config import *
+import config
 
 
 class PGGAN():
@@ -40,13 +40,13 @@ class Downsample(nn.Module):
 class Generator(nn.Module):
   def __init__(self, ngpu):
     super(Generator, self).__init__()
-    self.ngpu = ngpu
+    self.ngpu = config.ngpu
     self.gl = 0 # current growth level, add +1 whenever you grow in resolution
-    self.nc1 = ngc[self.gl] # nr channels before first conv in block (upsample)
-    self.nc2 = ngc[self.gl] # nr channels after first conv in block (conv1 + conv2)
+    self.nc1 = config.ngc[self.gl] # nr channels before first conv in block (upsample)
+    self.nc2 = config.ngc[self.gl] # nr channels after first conv in block (conv1 + conv2)
 
-    self.resX = posResX[self.gl]
-    self.resY = posResX[self.gl]
+    self.resX = config.posResX[self.gl]
+    self.resY = config.posResX[self.gl]
     layers = self.firstBlock() # list of layers
     self.net = nn.Sequential(*layers)
     self.net.add_module('toImage', self.toImage())
@@ -63,17 +63,17 @@ class Generator(nn.Module):
 
   def toImage(self):
     # to RGB
-    return conv(self.nc2, nc, kernel_size=1, seq=True)
+    return conv(self.nc2, config.nc, kernel_size=1, seq=True)
     
 
   def grow_network(self):
     print('growing Generator')
     newNet = nn.Sequential()
     self.gl += 1 # add +1 to the growth level
-    self.resX = posResX[self.gl]
-    self.resY = posResX[self.gl]
-    self.nc1 = ngc[self.gl-1] # nr channels before first conv in block (upsample)
-    self.nc2 = ngc[self.gl] # nr channels after first conv in block (conv1 + conv2)
+    self.resX = config.posResX[self.gl]
+    self.resY = config.posResX[self.gl]
+    self.nc1 = config.ngc[self.gl-1] # nr channels before first conv in block (upsample)
+    self.nc2 = config.ngc[self.gl] # nr channels after first conv in block (conv1 + conv2)
 
     print('self.net.named_children',list(self.net.named_children()))
     for name, module in self.net.named_children():
@@ -82,7 +82,7 @@ class Generator(nn.Module):
         newNet[-1].load_state_dict(module.state_dict())
     
     # upsample
-    newRes = (posResX[self.gl], posResY[self.gl])
+    newRes = (config.posResX[self.gl], config.posResY[self.gl])
     newNet.add_module('upsample%d' % self.gl, nn.Upsample(size=newRes))
 
     # Conv 3x3
@@ -97,7 +97,7 @@ class Generator(nn.Module):
     self.net = newNet
 
   def forward(self, input):
-    assert input.shape[1] == latDim
+    assert input.shape[1] == config.latDim
     output = self.net(input)
     if output.shape[2] != self.resX or output.shape[3] != self.resY:
       print('G output shape', output.shape)
@@ -110,13 +110,13 @@ class Generator(nn.Module):
 class Discriminator(nn.Module):
   def __init__(self, ngpu):
     super(Discriminator, self).__init__()
-    self.ngpu = ngpu
+    self.ngpu = config.ngpu
     self.gl = 0 # current growth level, add +1 whenever you grow in resolution
-    self.nc1 = ndc[nrLevels - self.gl - 2] # nr channels before second conv in block
-    self.nc2 = ndc[nrLevels - self.gl - 1] # nr channels after second conv in block
+    self.nc1 = config.ndc[config.nrLevels - self.gl - 2] # nr channels before second conv in block
+    self.nc2 = config.ndc[config.nrLevels - self.gl - 1] # nr channels after second conv in block
 
-    self.resX = posResX[self.gl]
-    self.resY = posResX[self.gl]
+    self.resX = config.posResX[self.gl]
+    self.resY = config.posResX[self.gl]
 
     self.net = nn.Sequential()
     self.net.add_module('fromImage', self.fromImage())
@@ -125,7 +125,7 @@ class Discriminator(nn.Module):
 
   def fromImage(self): # like fromRGB but for 1 channel
     # conv 1x1
-    return conv(nc, self.nc1, kernel_size=1, seq=True)
+    return conv(config.nc, self.nc1, kernel_size=1, seq=True)
 
   def lastBlock(self):
     # conv 3x3, padding=1
@@ -147,11 +147,11 @@ class Discriminator(nn.Module):
     newNet = nn.Sequential()
     self.gl += 1 # add +1 to the growth level
     oldRes = (self.resX, self.resY)
-    self.resX = posResX[self.gl]
-    self.resY = posResY[self.gl]
+    self.resX = config.posResX[self.gl]
+    self.resY = config.posResY[self.gl]
 
-    self.nc1 = ndc[nrLevels - self.gl - 2] # nr channels in first layer
-    self.nc2 = ndc[nrLevels - self.gl - 1] # nr channels in first layer
+    self.nc1 = config.ndc[config.nrLevels - self.gl - 2] # nr channels in first layer
+    self.nc2 = config.ndc[config.nrLevels - self.gl - 1] # nr channels in first layer
 
     # convert output to Image
     newNet.add_module('fromImage', self.fromImage())
@@ -176,7 +176,7 @@ class Discriminator(nn.Module):
 
 
   def forward(self, input):
-    assert input.shape[1] == nc
+    assert input.shape[1] == config.nc
     if input.shape[2] != self.resX or input.shape[3] != self.resY:
       print('D input shape', input.shape)
       print('D res=(%d, %d)' % (self.resX, self.resY))

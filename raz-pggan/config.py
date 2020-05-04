@@ -14,16 +14,16 @@ nrLevels = len(posResX)
 startResLevel = 1 # starting resolution level
 
 # model save path
-model_save_paths = ['generated/l%d-model-%dx%d.pt' % (i, posResX[i], posResY[i]) for i in range(nrLevels)]
+modelSavePaths = ['generated/l%d-model-%dx%d.pt' % (i, posResX[i], posResY[i]) for i in range(nrLevels)]
 
 # Number of workers for dataloader, for each growth level
-workers = [0,0,10,10,10,10,10,10,10]
+workers = [10,10,10,10,10,10,10,10,10]
 
 # Batch size during training
-batch_size = [10,10,1024,1024,1024,256,64,16,4]
+batchSize = [1024,1024,1024,1024,1024,256,64,16,4]
 
 # for running tests on a subset of the data (max = 369,000)
-nr_imgs_to_load = 100
+nrImgsToLoad = 40000
 
 keepBatchesInMemory = [True, True, True, True, True, True, True, True, True]
 
@@ -43,7 +43,7 @@ assert nrLevels == len(ngc)
 assert nrLevels == len(ndc)
 
 # Number of training epochs
-num_epochs = 20
+numEpochs = 20
 
 # Learning rate for optimizers
 lr = 0.0002
