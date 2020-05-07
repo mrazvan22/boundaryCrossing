@@ -24,12 +24,13 @@ from IPython.display import HTML
 import time
 from cvtorchvision import cvtransforms
 import importlib
-
+import pickle
 
 #from config import *
 import config
 import DataLoaderOptimised
-from network import *
+import network
+
 
 
 # Set random seed for reproducibility
@@ -48,19 +49,16 @@ print('# devices=', torch.cuda.device_count())
 print(torch.cuda.get_device_name(0))
 print('is_available', torch.cuda.is_available())
 
-
-
 # custom weights initialization called on netG and netD
-def weights_init(m):
-    classname = m.__class__.__name__
-    if classname.find('Conv') != -1:
-        nn.init.normal_(m.weight.data, 0.0, 1)
-        nn.init.normal_(m.weight.data, 0.0, 1)
-        asda 
+#def weights_init(m):
+#    classname = m.__class__.__name__
+#    if classname.find('Conv') != -1:
+#        nn.init.normal_(m.weight.data, 0.0, 1)
+#        nn.init.constant_(m.bias.data, 0)
+#    if 
     #elif classname.find('BatchNorm') != -1:
     #    nn.init.normal_(m.weight.data, 1.0, 0.02)
     #    nn.init.constant_(m.bias.data, 0)
-
 
 
 def mycollate(batch):
@@ -77,11 +75,13 @@ def initModels():
   
  
   # Initialize loss fuconfig.nction
-  criterion = nn.MSELoss()
+  #criterion = nn.MSELoss()
+  criterion = nn.BCELoss()
 
   if config.startResLevel == 0: # if starting from scratch, then create the gen/discrim, else load from prev checkpoint
     # Create the generator
-    netG = Generator(config.ngpu).to(device)
+    #netG = network.Generator(config.ngpu).to(device)
+    netG = network.GeneratorDCGAN2(config.ngpu).to(device)
   
 
     # Handle multi-gpu if desired
@@ -90,13 +90,14 @@ def initModels():
 
     # Apply the weights_init fuconfig.nction to randomly initialize all weights
     #  to mean=0, stdev=0.2.
-    netG.apply(weights_init)
+    #netG.apply(weights_init)
 
     # Print the model
     print(netG)
 
     # Create the Discriminator
-    netD = Discriminator(config.ngpu).to(device)
+    #netD = network.Discriminator(config.ngpu).to(device)
+    netD = network.DiscriminatorDCGAN2(config.ngpu).to(device)
 
     # Handle multi-gpu if desired
     if (device.type == 'cuda') and (config.ngpu > 1):
@@ -104,7 +105,7 @@ def initModels():
 
     # Apply the weights_init fuconfig.nction to randomly initialize all weights
     #  to mean=0, stdev=0.2.
-    netD.apply(weights_init)
+    #netD.apply(weights_init)
 
     # Print the model
     print(netD)
@@ -148,26 +149,31 @@ def loadBatches(l):
   #  cvtransforms.ToTensor(),
   #])
 
+  if not config.loadBatchesFromFile:
 
-  dataset = DataLoaderOptimised.PngDataset(config.train_images_list, curX, transformPIL)
-  
-  # Create the DataLoaderOptimised
-  loader = torch.utils.data.DataLoader(dataset, batch_size=config.batchSize[l],
-    shuffle=True, num_workers=config.workers[l], pin_memory=True,
-    #collate_fn=mycollate
-    )
+    dataset = DataLoaderOptimised.PngDataset(config.train_images_list, curX, transformPIL)
+    
+    # Create the DataLoaderOptimised
+    loader = torch.utils.data.DataLoader(dataset, batch_size=config.batchSize[l],
+      shuffle=True, num_workers=config.workers[l], pin_memory=True,
+      #collate_fn=mycollate
+      )
 
-  nr_batches_to_load = int(config.nrImgsToLoad / config.batchSize[l])
+    nr_batches_to_load = int(config.nrImgsToLoad / config.batchSize[l])
 
-  start = time.time()
-  dataBatches = [0 for x in range(nr_batches_to_load)]
-  for b, data in enumerate(loader, 0):
-    print('loading batch %d/%d of size %d' % (b, nr_batches_to_load, config.batchSize[l]))
-    if b >= nr_batches_to_load: 
-      break
-    dataBatches[b] = data
+    start = time.time()
+    dataBatches = [0 for x in range(nr_batches_to_load)]
+    for b, data in enumerate(loader, 0):
+      print('loading batch %d/%d of size %d' % (b, nr_batches_to_load, config.batchSize[l]))
+      if b >= nr_batches_to_load: 
+        break
+      dataBatches[b] = data
 
-  print('time for loading data', time.time() - start)
+    print('time for loading data', time.time() - start)
+
+    pickle.dump(dataBatches, open(config.batchFiles[l], 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
+  else:  
+    dataBatches = pickle.load(open(config.batchFiles[l], 'rb'))
 
   return dataBatches
 
@@ -209,8 +215,8 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
   fake_label = 0
 
   # Setup Adam optimizers for both G and D
-  optimizerD = optim.Adam(netD.parameters(), lr=config.lr, betas=(config.beta1, 0.999))
-  optimizerG = optim.Adam(netG.parameters(), lr=config.lr, betas=(config.beta1, 0.999))
+  optimizerD = optim.Adam(netD.parameters(), lr=config.lr_D, betas=(config.beta1, 0.999))
+  optimizerG = optim.Adam(netG.parameters(), lr=config.lr_G, betas=(config.beta1, 0.999))
 
   # Training Loop
 
@@ -229,7 +235,7 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
 
       # For each batch in the DataLoaderOptimised
       #for i, data in enumerate(loader, 0):
-      for i, data in enumerate(dataBatches,0):
+      for i, data in enumerate(dataBatches[:2],0):
 
           ############################
           # (1) Update D network: maximize log(D(x)) + log(1 - D(G(z)))
@@ -246,16 +252,16 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
           output = netD(real_cpu)
           #print('output.size', output.size())
 
-          # Calculate loss on all-real batch
+          # Calculate loss on all-real batch errD_real = E_data(log(D(x)))
           #print('output.shape', output.shape)
           #print('label.shape', label.shape)
-          output = output.view(-1)
-          errD_real = criterion(output, label)
+          output_real = output.view(-1)
+          errD_real = criterion(output_real, label)
           # Calculate gradients for D in backward pass
           errD_real.backward()
           D_x = output.mean().item()
 
-          ## Train with all-fake batch
+          ## Train with all-fake batch errD_fake = E_z [log(1 - D(G(z)))]
           # Generate batch of latent vectors
           noise = torch.randn(b_size, config.latDim , 1, 1, device=device)
           # Generate fake image batch with G
@@ -263,10 +269,10 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
           #print('fake.size()', fake.size())
           label.fill_(fake_label)
           # Classify all fake batch with D
-          output = netD(fake.detach()).view(-1)
+          output_fake = netD(fake.detach()).view(-1)
 
           # Calculate D's loss on the all-fake batch
-          errD_fake = criterion(output, label)
+          errD_fake = criterion(output_fake, label)
           # Calculate the gradients for this batch
           errD_fake.backward()
           D_G_z1 = output.mean().item()
@@ -292,7 +298,9 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
       
 
           # Output training stats
-          if i % 5 == 0:
+          if i < 5 or i % 5 == 0:
+            print('D(real)', output_real[:10], output_real.shape)
+            print('D(fake)', output_fake[:10], output_fake.shape)
             print('[%d/%d][%d/%d]\tLoss_D: %.4f\tLoss_G: %.4f\tD(x): %.4f\tD(G(z)): %.4f / %.4f'
               % (epoch, config.numEpochs, i, len(dataBatches),
                  errD.item(), errG.item(), D_x, D_G_z1, D_G_z2))
@@ -302,10 +310,20 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
           D_losses.append(errD.item())
 
           # Check how the generator is doing by saving G's output on fixed_noise
-          if (i == len(dataBatches)-1):
+          if (i == len(dataBatches)-1) or True:
             with torch.no_grad():
               fake = netG(fixed_noise).detach().cpu()
             img_list.append(vutils.make_grid(fake, padding=2, normalize=True, nrow=nrows))
+    
+            fig = pl.figure(figsize=(8,8))
+            pl.title("Fake Images")
+            pl.imshow(np.transpose(img_list[-1],(1,2,0)))
+            #fig.show()
+            fig.subplots_adjust(left=0,right=1,bottom=0,top=1)
+            ax = pl.gca()
+            fig.savefig('generated/l%d-fake-i%.2d.png' % (l, i))
+            pl.close()
+ 
 
           iters += 1
 
@@ -368,6 +386,7 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
  
 def rerunOneLevel(dataBatches, l=config.startResLevel):
   importlib.reload(config);
+  importlib.reload(network);
   netG, netD, criterion = initModels() 
   oneLevel(netG, netD, criterion, dataBatches, l)
 
@@ -391,7 +410,7 @@ if __name__ == '__main__':
   for l in range(config.startResLevel, config.nrLevels):
     dataBatches = loadBatches(l)
     print(len(dataBatches))
-    #ada
     oneLevel(netG, netD, criterion, dataBatches, l)
+    asd
 
 

@@ -2,20 +2,24 @@ import torch.nn as nn
 import config
 
 
-class PGGAN():
-  
-  def __init__():
-    pass
-
-def conv(in_channels, out_channels, kernel_size=3, stride=1, padding=0, leaky=True, transpose=False, seq=False):
+def conv(in_channels, out_channels, kernel_size=3, stride=1, padding=0, leaky=True, transpose=False, seq=False, batchNorm=False):
   # like the standard convolution, but also adde ReLU layer and defaults to kernel size 3
   if transpose:
     convFunc = nn.ConvTranspose2d
   else:
     convFunc = nn.Conv2d
   
-  layers = [convFunc(in_channels, out_channels, kernel_size, stride, padding)]
+  convObj = convFunc(in_channels, out_channels, kernel_size, stride, padding)
+  nn.init.normal_(convObj.weight, 0.0, 1)
+  nn.init.constant_(convObj.bias, 0)
+  layers = [convObj]
   
+  if batchNorm:
+    batchObj = nn.BatchNorm2d(num_features=out_channels)
+    nn.init.normal_(batchObj.weight, 1.0, 0.02)
+    nn.init.constant_(batchObj.bias, 0)
+    layers += [batchObj]    
+
   if leaky:                 
     layers += [nn.LeakyReLU(0.2, inplace=True)]
   else:
@@ -37,6 +41,113 @@ class Downsample(nn.Module):
         return nn.functional.interpolate(x, size=self.size, mode=self.mode, align_corners=False)
 
 
+class GeneratorDCGAN2(nn.Module):
+    def __init__(self, ngpu):
+        super(GeneratorDCGAN2, self).__init__()
+        self.ngpu = ngpu
+        self.main = nn.Sequential(
+            # input is Z, going into a convolution
+            nn.ConvTranspose2d( config.latDim, config.ngf * 8, 4, 1, 0, bias=False),
+            nn.BatchNorm2d(config.ngf * 8),
+            nn.ReLU(True),
+            # state size. (config.ngf*8) x 4 x 4
+            nn.ConvTranspose2d(config.ngf * 8, config.ngf * 4, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(config.ngf * 4),
+            nn.ReLU(True),
+            # state size. (config.ngf*4) x 8 x 8
+            nn.ConvTranspose2d( config.ngf * 4, config.ngf * 2, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(config.ngf * 2),
+            nn.ReLU(True),
+            # state size. (config.ngf*2) x 16 x 16
+            nn.ConvTranspose2d( config.ngf * 2, config.ngf, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(config.ngf),
+            nn.ReLU(True),
+            # state size. (config.ngf) x 32 x 32
+            nn.ConvTranspose2d( config.ngf, config.nc, 4, 2, 1, bias=False),
+            nn.Tanh()
+            # state size. (nc) x 64 x 64
+        )
+
+    def forward(self, input):
+        return self.main(input)
+
+
+class DiscriminatorDCGAN2(nn.Module):
+    def __init__(self, ngpu):
+        super(DiscriminatorDCGAN2, self).__init__()
+        self.ngpu = ngpu
+        self.main = nn.Sequential(
+            # input is (nc) x 64 x 64
+            nn.Conv2d(config.nc, config.ndf, 4, 2, 1, bias=False),
+            nn.LeakyReLU(0.2, inplace=True),
+            # state size. (config.ndf) x 32 x 32
+            nn.Conv2d(config.ndf, config.ndf * 2, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(config.ndf * 2),
+            nn.LeakyReLU(0.2, inplace=True),
+            # state size. (config.ndf*2) x 16 x 16
+            nn.Conv2d(config.ndf * 2, config.ndf * 4, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(config.ndf * 4),
+            nn.LeakyReLU(0.2, inplace=True),
+            # state size. (config.ndf*4) x 8 x 8
+            nn.Conv2d(config.ndf * 4, config.ndf * 8, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(config.ndf * 8),
+            nn.LeakyReLU(0.2, inplace=True),
+            # state size. (config.ndf*8) x 4 x 4
+            nn.Conv2d(config.ndf * 8, 1, 4, 1, 0, bias=False),
+            nn.Sigmoid()
+        )
+
+    def forward(self, input):
+        return self.main(input)
+
+
+# torch.nn.Conv2d(in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True, padding_mode='zeros')
+class GeneratorDCGAN(nn.Module):
+    def __init__(self, ngpu):
+        super(GeneratorDCGAN, self).__init__()
+        self.ngpu = ngpu
+        self.main = nn.Sequential(
+            # input is Z, going into a convolution
+            nn.ConvTranspose2d( config.latDim, config.ngc[0], kernel_size=4, stride=1, padding=0, bias=False),
+            nn.BatchNorm2d(config.ngc[0]),
+            nn.ReLU(True),
+            # state size. (config.ngf*8) x 4 x 4
+            #nn.ConvTranspose2d(config.ngf * 8, config.ngf * 4, 4, 2, 1, bias=False),
+            #nn.BatchNorm2d(config.ngf * 4),
+            #nn.ReLU(True),
+            
+            # state size. (config.ngf) x 8 x 8
+            nn.ConvTranspose2d( config.ngc[0], config.nc, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.Tanh()
+            # state size. (nc) x 64 x 64
+        )
+
+    def forward(self, input):
+        return self.main(input)
+
+
+class DiscriminatorDCGAN(nn.Module):
+    def __init__(self, ngpu):
+        super(DiscriminatorDCGAN, self).__init__()
+        self.ngpu = ngpu
+        self.main = nn.Sequential(
+            # input is (nc) x 4 x 4
+            nn.Conv2d(config.nc, config.ndc[-1], kernel_size=4, stride=1, padding=0, bias=False),
+            nn.BatchNorm2d(config.ndc[-1]),
+            nn.LeakyReLU(0.2, inplace=True),
+            # state size. (config.ndf*4) x 8 x 8
+            #nn.Conv2d(config.ndf * 4, config.ndf * 8, 4, 2, 1, bias=False),
+            #nn.BatchNorm2d(config.ndf * 8),
+            #nn.LeakyReLU(0.2, inplace=True),
+            # state size. (config.ndf*8) x 4 x 4
+            nn.Conv2d(config.ndc[-1], config.nc, kernel_size=1, stride=1, padding=0, bias=False),
+            nn.Sigmoid()
+        )
+
+    def forward(self, input):
+        return self.main(input)
+
+
 class Generator(nn.Module):
   def __init__(self, ngpu):
     super(Generator, self).__init__()
@@ -55,10 +166,10 @@ class Generator(nn.Module):
     #input latent vector ngc x 1 x 1
     
     # conv 4x4
-    layers = conv(self.nc1, self.nc2, kernel_size=4, transpose=True)                
+    layers = conv(self.nc1, self.nc2, kernel_size=4, transpose=True, batchNorm=config.batchNorm)                
     
     # Conv 3x3, padding of 1
-    layers += conv(self.nc2, self.nc2, padding=1)
+    layers += conv(self.nc2, self.nc2, padding=1, batchNorm=config.batchNorm)
     return layers
 
   def toImage(self):
@@ -86,10 +197,10 @@ class Generator(nn.Module):
     newNet.add_module('upsample%d' % self.gl, nn.Upsample(size=newRes))
 
     # Conv 3x3
-    newNet.add_module('conv%d_1' % self.gl, conv(self.nc1, self.nc2, padding=1, seq=True))    
+    newNet.add_module('conv%d_1' % self.gl, conv(self.nc1, self.nc2, padding=1, seq=True, batchNorm=config.batchNorm))    
 
     # Conv 3x3
-    newNet.add_module('conv%d_2' % self.gl, conv(self.nc2, self.nc2, padding=1, seq=True))    
+    newNet.add_module('conv%d_2' % self.gl, conv(self.nc2, self.nc2, padding=1, seq=True, batchNorm=config.batchNorm))    
 
     # convert output to Image
     newNet.add_module('toImage', self.toImage())
@@ -129,16 +240,21 @@ class Discriminator(nn.Module):
 
   def lastBlock(self):
     # conv 3x3, padding=1
-    layers = conv(self.nc1, self.nc1, padding=1)
+    layers = conv(self.nc1, self.nc1, padding=1, batchNorm=config.batchNorm)
       
     # conv 4x4
-    layers += conv(self.nc2, self.nc2, kernel_size=4)
+    layers += conv(self.nc2, self.nc2, kernel_size=4, batchNorm=config.batchNorm)
       
     # fully-connected layer
+    linearObj = nn.Linear(in_features=self.nc2, out_features=1)
+    nn.init.normal_(linearObj.weight, 0.0, 1)
+    nn.init.constant_(linearObj.bias, 0)
+
     layers += [
       nn.Flatten(),
-      nn.Linear(in_features=self.nc2, out_features=1)
-    ]
+      linearObj,
+      nn.Sigmoid()
+         ]
     
     return layers
       
@@ -157,10 +273,10 @@ class Discriminator(nn.Module):
     newNet.add_module('fromImage', self.fromImage())
     
     # Conv 3x3
-    newNet.add_module('conv%d_1' % self.gl, conv(self.nc1, self.nc1, padding=1, seq=True))    
+    newNet.add_module('conv%d_1' % self.gl, conv(self.nc1, self.nc1, padding=1, seq=True, batchNorm=config.batchNorm))    
 
     # Conv 3x3
-    newNet.add_module('conv%d_2' % self.gl, conv(self.nc1, self.nc2, padding=1, seq=True))    
+    newNet.add_module('conv%d_2' % self.gl, conv(self.nc1, self.nc2, padding=1, seq=True, batchNorm=config.batchNorm))    
 
     # downsample
     newNet.add_module('downsample%d' % self.gl, Downsample(size=oldRes, mode='bilinear'))

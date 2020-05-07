@@ -5,37 +5,52 @@
 train_images_list = "xray_pngs.csv" # all 360k
 
 # list of possible resolutions
-posResX = [4,8,16,32,64,128,256,512,1024]
-#posRes = [64,128,256,512,1024]
+#posResX = [4,8,16,32,64,128,256,512,1024]
+posResX = [64,8,16,32,64,128,256,512,1024]
 posResY = posResX
 nrLevels = len(posResX)
 
 
-startResLevel = 1 # starting resolution level
+startResLevel = 0 # starting resolution level
 
 # model save path
 modelSavePaths = ['generated/l%d-model-%dx%d.pt' % (i, posResX[i], posResY[i]) for i in range(nrLevels)]
+
 
 # Number of workers for dataloader, for each growth level
 workers = [10,10,10,10,10,10,10,10,10]
 
 # Batch size during training
-batchSize = [1024,1024,1024,1024,1024,256,64,16,4]
+#batchSize = [1024,1024,1024,1024,1024,256,64,16,4]
+batchSize = [128,1024,1024,1024,1024,256,64,16,4]
 
 # for running tests on a subset of the data (max = 369,000)
+#nrImgsToLoad = 40000
 nrImgsToLoad = 40000
+
+loadBatchesFromFile = False
+
+batchFiles = ['generated/batches/r%d_%d.npz' % (r, nrImgsToLoad) for r in posResX]
+batchFilesTorch = ['generated/batches/r%d_%d.pt' % (r, nrImgsToLoad) for r in posResX]
 
 keepBatchesInMemory = [True, True, True, True, True, True, True, True, True]
 
 # Number of channels in the training images. For grayscale X-ray images this is 1
 nc = 1 
 
+batchNorm=True
+
 
 # number of channels at each layer of generator (first is the dimension of latent vector)
 ngc = [512, 512, 512, 512, 256, 128, 64, 32, 16]
+#ngc = [12, 12, 12, 512, 256, 128, 64, 32, 16]
 
 # number of channels at each layer of discriminator 
 ndc = [32, 64, 128, 256, 512, 512, 512, 512, 512]
+#ndc = [32, 64, 128, 256, 512, 512, 12, 12, 12]
+
+ngf = 512
+ndf = 512
 
 latDim = ngc[0] # dimension of latent vector
 
@@ -46,12 +61,13 @@ assert nrLevels == len(ndc)
 numEpochs = 20
 
 # Learning rate for optimizers
-lr = 0.0002
+lr_G = 0.0001
+lr_D = 0.0001
 
 # Beta1 hyperparam for Adam optimizers
-beta1 = 0.5
+beta1 = 0.9
 
 # Number of GPUs available. Use 0 for CPU mode.
-ngpu = 4
+ngpu = 8
 
 
