@@ -6,7 +6,7 @@ train_images_list = "xray_pngs.csv" # all 360k
 
 # list of possible resolutions
 #posResX = [4,8,16,32,64,128,256,512,1024]
-posResX = [64,8,16,32,64,128,256,512,1024]
+posResX = [4,8,16,32,64,128]
 posResY = posResX
 nrLevels = len(posResX)
 
@@ -18,20 +18,19 @@ modelSavePaths = ['generated/l%d-model-%dx%d.pt' % (i, posResX[i], posResY[i]) f
 
 
 # Number of workers for dataloader, for each growth level
-workers = [10,10,10,10,10,10,10,10,10]
+workers = [10,10,10,0,0,0,0,0,0]
 
 # Batch size during training
 #batchSize = [1024,1024,1024,1024,1024,256,64,16,4]
-batchSize = [128,1024,1024,1024,1024,256,64,16,4]
+batchSize = [1024,1024,1024,1024,1024,256,64,16,4]
 
 # for running tests on a subset of the data (max = 369,000)
 #nrImgsToLoad = 40000
-nrImgsToLoad = 40000
+nrImgsToLoad = 369000
 
 loadBatchesFromFile = False
 
-batchFiles = ['generated/batches/r%d_%d.npz' % (r, nrImgsToLoad) for r in posResX]
-batchFilesTorch = ['generated/batches/r%d_%d.pt' % (r, nrImgsToLoad) for r in posResX]
+batchFiles = ['generated/batches/r%d_%d.pt' % (r, nrImgsToLoad) for r in posResX]
 
 keepBatchesInMemory = [True, True, True, True, True, True, True, True, True]
 
@@ -49,20 +48,21 @@ ngc = [512, 512, 512, 512, 256, 128, 64, 32, 16]
 ndc = [32, 64, 128, 256, 512, 512, 512, 512, 512]
 #ndc = [32, 64, 128, 256, 512, 512, 12, 12, 12]
 
-ngf = 512
-ndf = 512
+ngf = 64
+ndf = 64
 
-latDim = ngc[0] # dimension of latent vector
+#latDim = ngc[0] # dimension of latent vector
+latDim = 100
 
-assert nrLevels == len(ngc)
-assert nrLevels == len(ndc)
+#assert nrLevels == len(ngc)
+#assert nrLevels == len(ndc)
 
 # Number of training epochs
 numEpochs = 20
 
 # Learning rate for optimizers
-lr_G = 0.0001
-lr_D = 0.0001
+lr_G = 0.0002
+lr_D = 0.0002
 
 # Beta1 hyperparam for Adam optimizers
 beta1 = 0.9

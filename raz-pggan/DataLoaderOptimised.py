@@ -44,17 +44,16 @@ import cv2
 
 
 class PngDataset(data.Dataset):
-  def __init__(self, train_images_list, image_size, transform=None):
+  def __init__(self, train_images_list, transform=None):
     self.train_images_list = pd.read_csv(train_images_list, delimiter='\n', header=None).values
     print(self.train_images_list[1,0])
 
     self.transform = transform
-    self.image_size = image_size
   
   def __getitem__(self, index):
      
     imageFile =  self.train_images_list[index,0]
-    doPrint = index % 512 == 0
+    doPrint = index % 4096 == 0
     if doPrint:
       start = time.time()
       print('loading %s' % (imageFile))
