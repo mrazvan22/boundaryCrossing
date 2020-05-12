@@ -80,7 +80,7 @@ def initModels():
   if config.startResLevel == 0: # if starting from scratch, then create the gen/discrim, else load from prev checkpoint
     # Create the generator
     #netG = network.Generator(config.ngpu).to(device)
-    netG = network.GeneratorDCGAN2(config.ngpu).to(device)
+    netG = network.GeneratorDCGAN3(config.ngpu).to(device)
   
 
     # Handle multi-gpu if desired
@@ -96,7 +96,7 @@ def initModels():
 
     # Create the Discriminator
     #netD = network.Discriminator(config.ngpu).to(device)
-    netD = network.DiscriminatorDCGAN2(config.ngpu).to(device)
+    netD = network.DiscriminatorDCGAN3(config.ngpu).to(device)
 
     # Handle multi-gpu if desired
     if (device.type == 'cuda') and (config.ngpu > 1):
@@ -176,7 +176,7 @@ def loadBatches(l):
     start = time.time()
     dataBatches = torch.load(config.batchFiles[l])['dataBatches']
     print('time to load images from torch file: %f' % (time.time() - start ))
-    asda
+    #asda
 
   return dataBatches
 
@@ -414,7 +414,7 @@ if __name__ == '__main__':
   for l in range(config.startResLevel, config.nrLevels):
     dataBatches = loadBatches(l)
     print(len(dataBatches))
-    #oneLevel(netG, netD, criterion, dataBatches, l)
-    #asd
+    oneLevel(netG, netD, criterion, dataBatches, l)
+    asd
 
 

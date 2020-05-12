@@ -40,6 +40,71 @@ class Downsample(nn.Module):
     def forward(self, x):
         return nn.functional.interpolate(x, size=self.size, mode=self.mode, align_corners=False)
 
+class GeneratorDCGAN3(nn.Module):
+    def __init__(self, ngpu):
+        super(GeneratorDCGAN3, self).__init__()
+        self.ngpu = ngpu
+        self.main = nn.Sequential(
+            # input is Z, going into a convolution
+            nn.ConvTranspose2d( config.latDim, config.ngf * 8, 4, 1, 0, bias=False),
+            nn.BatchNorm2d(config.ngf * 8),
+            nn.ReLU(True),
+            # state size. (config.ngf*8) x 4 x 4
+            nn.ConvTranspose2d(config.ngf * 8, config.ngf * 4, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(config.ngf * 4),
+            nn.ReLU(True),
+            # state size. (config.ngf*4) x 8 x 8
+            nn.ConvTranspose2d( config.ngf * 4, config.nc, 4, 2, 1, bias=False),
+            nn.Tanh()
+
+            #nn.BatchNorm2d(config.ngf * 2),
+            #nn.ReLU(True),
+            # state size. (config.ngf*2) x 16 x 16
+            #nn.ConvTranspose2d( config.ngf * 2, config.ngf, 4, 2, 1, bias=False),
+            #nn.BatchNorm2d(config.ngf),
+            #nn.ReLU(True),
+            # state size. (config.ngf) x 32 x 32
+            #nn.ConvTranspose2d( config.ngf, config.nc, 4, 2, 1, bias=False),
+            #nn.Tanh()
+            # state size. (nc) x 64 x 64
+        )
+
+    def forward(self, input):
+        return self.main(input)
+
+
+class DiscriminatorDCGAN3(nn.Module):
+    def __init__(self, ngpu):
+        super(DiscriminatorDCGAN3, self).__init__()
+        self.ngpu = ngpu
+        self.main = nn.Sequential(
+            # input is (nc) x 64 x 64
+            #nn.Conv2d(config.nc, config.ndf, 4, 2, 1, bias=False),
+            #nn.LeakyReLU(0.2, inplace=True),
+            # state size. (config.ndf) x 32 x 32
+            #nn.Conv2d(config.ndf, config.ndf * 2, 4, 2, 1, bias=False),
+            #nn.BatchNorm2d(config.ndf * 2),
+            #nn.LeakyReLU(0.2, inplace=True),
+            
+            
+            # state size. (config.ndf*2) x 16 x 16
+            nn.Conv2d(config.nc, config.ndf * 4, 4, 2, 1, bias=False),
+            #nn.BatchNorm2d(config.ndf * 4),
+            nn.LeakyReLU(0.2, inplace=True),
+            # state size. (config.ndf*4) x 8 x 8
+            nn.Conv2d(config.ndf * 4, config.ndf * 8, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(config.ndf * 8),
+            nn.LeakyReLU(0.2, inplace=True),
+            # state size. (config.ndf*8) x 4 x 4
+            nn.Conv2d(config.ndf * 8, 1, 4, 1, 0, bias=False),
+            nn.Sigmoid()
+        )
+
+    def forward(self, input):
+        return self.main(input)
+
+
+
 
 class GeneratorDCGAN2(nn.Module):
     def __init__(self, ngpu):

@@ -6,7 +6,7 @@ train_images_list = "xray_pngs.csv" # all 360k
 
 # list of possible resolutions
 #posResX = [4,8,16,32,64,128,256,512,1024]
-posResX = [4,8,16,32,64,128]
+posResX = [16,8,16,32,64,128]
 posResY = posResX
 nrLevels = len(posResX)
 
@@ -28,7 +28,7 @@ batchSize = [1024,1024,1024,1024,1024,256,64,16,4]
 #nrImgsToLoad = 40000
 nrImgsToLoad = 369000
 
-loadBatchesFromFile = False
+loadBatchesFromFile = True
 
 batchFiles = ['generated/batches/r%d_%d.pt' % (r, nrImgsToLoad) for r in posResX]
 
@@ -48,8 +48,8 @@ ngc = [512, 512, 512, 512, 256, 128, 64, 32, 16]
 ndc = [32, 64, 128, 256, 512, 512, 512, 512, 512]
 #ndc = [32, 64, 128, 256, 512, 512, 12, 12, 12]
 
-ngf = 64
-ndf = 64
+ngf = 16
+ndf = 16
 
 #latDim = ngc[0] # dimension of latent vector
 latDim = 100
