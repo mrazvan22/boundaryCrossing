@@ -40,21 +40,22 @@ class Downsample(nn.Module):
     def forward(self, x):
         return nn.functional.interpolate(x, size=self.size, mode=self.mode, align_corners=False)
 
+# torch.nn.Conv2d(in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True, padding_mode='zeros')
 class GeneratorDCGAN3(nn.Module):
     def __init__(self, ngpu):
         super(GeneratorDCGAN3, self).__init__()
         self.ngpu = ngpu
         self.main = nn.Sequential(
             # input is Z, going into a convolution
-            nn.ConvTranspose2d( config.latDim, config.ngf * 8, 4, 1, 0, bias=False),
-            nn.BatchNorm2d(config.ngf * 8),
+            nn.ConvTranspose2d( config.latDim, config.ngf * 2, kernel_size=4, stride=1, padding=0, bias=False),
+            nn.BatchNorm2d(config.ngf * 2),
             nn.ReLU(True),
             # state size. (config.ngf*8) x 4 x 4
-            nn.ConvTranspose2d(config.ngf * 8, config.ngf * 4, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(config.ngf * 4),
+            nn.ConvTranspose2d(config.ngf * 2, config.ngf, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(config.ngf),
             nn.ReLU(True),
             # state size. (config.ngf*4) x 8 x 8
-            nn.ConvTranspose2d( config.ngf * 4, config.nc, 4, 2, 1, bias=False),
+            nn.ConvTranspose2d( config.ngf, config.nc, kernel_size=4, stride=2, padding=1, bias=False),
             nn.Tanh()
 
             #nn.BatchNorm2d(config.ngf * 2),
@@ -72,7 +73,7 @@ class GeneratorDCGAN3(nn.Module):
     def forward(self, input):
         return self.main(input)
 
-
+# don't apply batchnorm to Disc input layer and Gen output layer, otherwise sample oscillation can occur
 class DiscriminatorDCGAN3(nn.Module):
     def __init__(self, ngpu):
         super(DiscriminatorDCGAN3, self).__init__()
@@ -88,15 +89,15 @@ class DiscriminatorDCGAN3(nn.Module):
             
             
             # state size. (config.ndf*2) x 16 x 16
-            nn.Conv2d(config.nc, config.ndf * 4, 4, 2, 1, bias=False),
-            #nn.BatchNorm2d(config.ndf * 4),
+            nn.Conv2d(config.nc, config.ndf, kernel_size=4, stride=2, padding=1, bias=False),
+            #nn.BatchNorm2d(config.ndf),
             nn.LeakyReLU(0.2, inplace=True),
-            # state size. (config.ndf*4) x 8 x 8
-            nn.Conv2d(config.ndf * 4, config.ndf * 8, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(config.ndf * 8),
+            # state size. (config.ndf) x 8 x 8
+            nn.Conv2d(config.ndf, config.ndf * 2, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(config.ndf * 2),
             nn.LeakyReLU(0.2, inplace=True),
-            # state size. (config.ndf*8) x 4 x 4
-            nn.Conv2d(config.ndf * 8, 1, 4, 1, 0, bias=False),
+            # state size. (config.ndf*2) x 4 x 4
+            nn.Conv2d(config.ndf * 2, 1, 4, 1, 0, bias=False),
             nn.Sigmoid()
         )
 
