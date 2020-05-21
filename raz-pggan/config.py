@@ -6,7 +6,7 @@ train_images_list = "xray_pngs.csv" # all 360k
 
 # list of possible resolutions
 #posResX = [4,8,16,32,64,128,256,512,1024]
-posResX = [16,32,64,128,256]
+posResX = [4,8,16,32,64,128,256]
 posResY = posResX
 nrLevels = len(posResX)
 
@@ -20,8 +20,6 @@ startResLevel = 0 # starting resolution level
 #batchSize = [2014,1024,1024,1024,1024,256,64,16,4]
 batchSize = [64,64,64,64,64,64,64,16,4]
 
-# model save path
-modelSavePaths = ['generated/l%d-model-%dx%d_b%d.pt' % (i, posResX[i], posResY[i], batchSize[i]) for i in range(nrLevels)]
 
 
 # Number of workers for dataloader, for each growth level
@@ -32,7 +30,7 @@ workers = [10,10,10,0,0,0,0,0,0]
 #nrImgsToLoad = 40000
 nrImgsToLoad = 369000
 
-loadBatchesFromFile = True
+loadBatchesFromFile = False
 
 batchFiles = ['generated/batches/r%d_%d.pt' % (r, nrImgsToLoad) for r in posResX]
 
@@ -52,26 +50,33 @@ ngc = [512, 512, 512, 512, 256, 128, 64, 32, 16]
 ndc = [32, 64, 128, 256, 512, 512, 512, 512, 512]
 #ndc = [32, 64, 128, 256, 512, 512, 12, 12, 12]
 
-ngf = 64
-ndf = 64
+ngf = 10
+ndf = 10
 
 #latDim = ngc[0] # dimension of latent vector
-latDim = 100
+latDim = 20
 
 #assert nrLevels == len(ngc)
 #assert nrLevels == len(ndc)
 
 # Number of training epochs
-numEpochs = 5
+numEpochs = 300
 
 # Learning rate for optimizers
-lr_G = 0.0002
-lr_D = 0.0002
+lr_G = 0.001
+lr_D = 0.001
 
 # Beta1 hyperparam for Adam optimizers
-beta1 = 0.5
+beta1 = 0.9
 
 # Number of GPUs available. Use 0 for CPU mode.
-ngpu = 8
+ngpu = 1 # use 1 GPU for small batch sizes, e.g. < 256
 
-lambdaGrad = 10
+lambdaGrad = 0.1
+
+n_critic = 5
+
+outFolder = ['generated/l%s_lr%s_ngf%d_ndf%d_lD%d_b%d_beta%s' % (lambdaGrad, lr_G, ngf, ndf, latDim, batchSize[l], beta1) for l in range(nrLevels)]
+
+# model save path
+modelSavePaths = ['%s/lev%d-model-%dx%d_b%d.pt' % (outFolder[l], l, posResX[l], posResY[l], batchSize[l]) for l in range(nrLevels)]

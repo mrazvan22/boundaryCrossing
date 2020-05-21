@@ -11,4 +11,7 @@ copy8192ToLocal:
 	cat xray_pngs_8192.csv | xargs -I {} cp {} /home/razvan/xray_pngs_8192
 
 launchJob:
-	srun --x11 -N 1 --ntasks-per-node=1 --cpus-per-task=40 --gres=gpu:8  --pty zsh
+	ZDOTDIR=/data/vision/polina/users/razvan srun --x11 -N 1 --ntasks-per-node=1 --cpus-per-task=40 --gres=gpu:8  --pty zsh
+
+launchJobLight:
+	ZDOTDIR=/data/vision/polina/users/razvan srun --x11 -N 1 --ntasks-per-node=1 --cpus-per-task=5 --gres=gpu:1  --pty zsh

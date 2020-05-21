@@ -92,9 +92,10 @@ class DiscriminatorDCGAN3(nn.Module):
             nn.Conv2d(config.nc, config.ndf, kernel_size=4, stride=2, padding=1, bias=False),
             #nn.BatchNorm2d(config.ndf),
             nn.LeakyReLU(0.2, inplace=True),
-            # state size. (config.ndf) x 8 x 8
+            # state size. (config.ndf) x 4 x 4
             nn.Conv2d(config.ndf, config.ndf * 2, kernel_size=4, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(config.ndf * 2),
+            nn.LayerNorm(normalized_shape=(config.ndf * 2,4,4)),
+            #nn.BatchNorm2d(config.ndf * 2),
             nn.LeakyReLU(0.2, inplace=True),
             # state size. (config.ndf*2) x 4 x 4
             nn.Conv2d(config.ndf * 2, 1, 4, 1, 0, bias=False),
