@@ -43,6 +43,7 @@ sys.stdout.flush()
 
 # Decide which device we want to run on
 device = torch.device("cuda:0" if (torch.cuda.is_available() and config.ngpu > 0) else "cpu")
+parallelCuda = (device.type == 'cuda') and (config.ngpu > 1)
 print('device ', device)
 print('curr_device', torch.cuda.current_device())
 print('# devices=', torch.cuda.device_count())
@@ -91,7 +92,7 @@ def initModels():
   
 
     # Handle multi-gpu if desired
-    if (device.type == 'cuda') and (config.ngpu > 1):
+    if parallelCuda:
       netG = nn.DataParallel(netG, list(range(config.ngpu)))
 
     # Apply the weights_init fuconfig.nction to randomly initialize all weights
@@ -110,7 +111,7 @@ def initModels():
     netD = network.Discriminator(config.ngpu).to(device)
 
     # Handle multi-gpu if desired
-    if (device.type == 'cuda') and (config.ngpu > 1):
+    if parallelCuda:
       netD = nn.DataParallel(netD, list(range(config.ngpu)))
 
     # Apply the weights_init fuconfig.nction to randomly initialize all weights
@@ -131,14 +132,32 @@ def initModels():
     #'img_list' : img_list,
     #}, config.modelSavePaths[i])
 
+    # create initial 4x4 resolution network, level = 0
+    netG = network.Generator(config.ngpu) 
+    netD = network.Discriminator(config.ngpu)
+
+    # grow networks to resolution of previous checkpoint (8x8 - level 1, 16x16 - level 2, ...)
+    netG.grow_X_levels(extraLevels=config.startResLevel-1)
+    netD.grow_X_levels(extraLevels=config.startResLevel-1)
+
+    # load weights from previous checkpoint 
     checkpoint = torch.load(config.modelSavePaths[config.startResLevel-1])
-    #netG = Generator(config.ngpu, level=l-1)
-    #netD = Discriminator(config.ngpu, level=l-1)
-    #netG.load_state_dict(checkpoint['G_state_dict'])
-    #netD.load_state_dict(checkpoint['D_state_dict'])
-    #net      
-    netG = checkpoint['netG']
-    netD = checkpoint['netD']
+    netG.load_state_dict(checkpoint['G_state'])
+    netD.load_state_dict(checkpoint['D_state'])
+
+    # set up correct weights for batchNorm and dropout
+    netG.eval() 
+    netD.eval()
+
+    netG.to(device)
+    netD.to(device)
+    # Handle multi-gpu if desired
+    if parallelCuda:
+      netG = nn.DataParallel(netG, list(range(config.ngpu)))
+      netD = nn.DataParallel(netD, list(range(config.ngpu)))
+
+    #netG = checkpoint['netG']
+    #netD = checkpoint['netD']
 
   return netG, netD, criterion  
 
@@ -237,28 +256,35 @@ def calc_gradient_penalty(netD, real_data, fake_data):
 
 def oneLevel(netG, netD, criterion, dataBatches, l):
   if l != 0: # grow the network in resolution 
-    netG.module.grow_network()
+    if parallelCuda:
+      netG.module.grow_network()
+      netD.module.grow_network()
+    else:
+      netG.grow_network()
+      netD.grow_network()
+    
     netG.to(device)
     print(netG)
-    netD.module.grow_network()
     netD.to(device)
     print(netD)
 
 
   os.system('mkdir -p %s' % config.outFolder[l])
-  doPlot = False
+  doPlot = True
   if doPlot:
     # Plot some training images
-    real_batch = next(iter(loader))
-    print('real_batch ', real_batch)
-    print('batch len', len(real_batch))
-    print(real_batch.shape)
-    fig = pl.figure(figsize=(12,4))
+    #real_batch = next(iter(loader))
+    real_batch = dataBatches[0]
+    #print('real_batch ', real_batch)
+    #print('batch len', len(real_batch))
+    #print(real_batch.shape)
+    fig = pl.figure(figsize=(12,12))
     pl.axis("off")
     pl.title("Training Images")
-    print(vutils.make_grid(real_batch.to(device), padding=2, normalize=True, nrow=8).cpu())
-    print(np.transpose(vutils.make_grid(real_batch.to(device), padding=2, normalize=True, nrow=8).cpu(),(1,2,0)))
+    #print(vutils.make_grid(real_batch.to(device), padding=2, normalize=True, nrow=8).cpu())
+    #print(np.transpose(vutils.make_grid(real_batch.to(device), padding=2, normalize=True, nrow=8).cpu(),(1,2,0)))
     pl.imshow(np.transpose(vutils.make_grid(real_batch.to(device), padding=2, normalize=True, nrow=8).cpu(),(1,2,0)))
+    fig.subplots_adjust(left=0,right=1,bottom=0,top=1)
     #pl.show()
     fig.savefig('%s/sampleBatch.png' % config.outFolder[l])
 
@@ -289,8 +315,8 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
 
   print("Starting Training Loop...")
   # For each epoch
-  for epoch in range(config.numEpochs):
-      if epoch == (config.numEpochs - 1):
+  for epoch in range(config.numEpochs[l]):
+      if epoch == (config.numEpochs[l] - 1):
         start = time.time()
 
       # For each batch in the DataLoaderOptimised
@@ -400,7 +426,7 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
             print('D(fake2)', D_fake_2[:10], D_fake_2.shape)
             print('gradient_penalty', gradient_penalty_i)
             print('[%d/%d][%d/%d]\tLoss_D: %.4f\tLoss_G: %.4f\tD(x): %.4f\tD(G(z)): %.4f / %.4f'
-              % (epoch, config.numEpochs, i, len(dataBatches),
+              % (epoch, config.numEpochs[l], i, len(dataBatches),
                  errD, errG, D_real_meani, D_fake_meani, D_fake_mean2i))
 
           # Save Losses for plotting later
@@ -429,10 +455,10 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
   print('time for last epoch', end - start)
   
   torch.save({
-    #'G_state_dict' : netG.state_dict(),
-    #'D_state_dict' : netD.state_dict(),
-    'netG' : netG,
-    'netD' : netD,
+    'G_state' : netG.state_dict(),
+    'D_state' : netD.state_dict(),
+    #'netG_' : netG,
+    #'netD' : netD,
     'G_losses' : G_losses,
     'D_losses': D_losses,
     'img_list' : img_list,
@@ -508,7 +534,7 @@ if __name__ == '__main__':
     os.system("printf '\033]2;%s\033\\'" % config.outFolder[l])
     dataBatches = loadBatches(l)
     print(len(dataBatches))
-    #oneLevel(netG, netD, criterion, dataBatches, l)
-    #asd    
+    oneLevel(netG, netD, criterion, dataBatches, l)
+    asd    
 
 

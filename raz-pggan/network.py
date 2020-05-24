@@ -2,7 +2,7 @@ import torch.nn as nn
 import config
 
 
-def conv(in_channels, out_channels, kernel_size=3, stride=1, padding=0, leaky=True, transpose=False, seq=False, batchNorm=False):
+def conv(in_channels, out_channels, kernel_size=3, stride=1, padding=0, leaky=True, transpose=False, seq=False, batchNorm=False, layerNorm=False, layerNormRes=None):
   # like the standard convolution, but also adde ReLU layer and defaults to kernel size 3
   if transpose:
     convFunc = nn.ConvTranspose2d
@@ -19,6 +19,10 @@ def conv(in_channels, out_channels, kernel_size=3, stride=1, padding=0, leaky=Tr
     nn.init.normal_(batchObj.weight, 1.0, 0.02)
     nn.init.constant_(batchObj.bias, 0)
     layers += [batchObj]    
+  
+  if layerNorm:
+    layerNormObj = nn.LayerNorm(normalized_shape=(out_channels,layerNormRes,layerNormRes))
+    layers += [layerNormObj]    
 
   if leaky:                 
     layers += [nn.LeakyReLU(0.2, inplace=True)]
@@ -241,8 +245,13 @@ class Generator(nn.Module):
 
   def toImage(self):
     # to RGB
-    return conv(self.nc2, config.nc, kernel_size=1, seq=True)
+    layers = conv(self.nc2, config.nc, kernel_size=1)
+    layers += [nn.Tanh()]
+    return nn.Sequential(*layers)
     
+  def grow_X_levels(self, extraLevels):
+    for l in range(extraLevels):
+      self.grow_network()
 
   def grow_network(self):
     print('growing Generator')
@@ -290,8 +299,11 @@ class Discriminator(nn.Module):
     super(Discriminator, self).__init__()
     self.ngpu = config.ngpu
     self.gl = 0 # current growth level, add +1 whenever you grow in resolution
-    self.nc1 = config.ndc[config.nrLevels - self.gl - 2] # nr channels before second conv in block
-    self.nc2 = config.ndc[config.nrLevels - self.gl - 1] # nr channels after second conv in block
+    #self.nc1 = config.ndc[config.nrLevels - self.gl - 2] # nr channels before second conv in block
+    #self.nc2 = config.ndc[config.nrLevels - self.gl - 1] # nr channels after second conv in block
+    self.nc1 = config.ndc[self.gl + 1]
+    self.nc2 = config.ndc[self.gl]
+    assert self.nc1 <= self.nc2
 
     self.resX = config.posResX[self.gl]
     self.resY = config.posResX[self.gl]
@@ -307,10 +319,10 @@ class Discriminator(nn.Module):
 
   def lastBlock(self):
     # conv 3x3, padding=1
-    layers = conv(self.nc1, self.nc1, padding=1, batchNorm=config.batchNorm)
+    layers = conv(self.nc1, self.nc1, padding=1, layerNorm=config.layerNorm, layerNormRes=4)
       
     # conv 4x4
-    layers += conv(self.nc2, self.nc2, kernel_size=4, batchNorm=config.batchNorm)
+    layers += conv(self.nc2, self.nc2, kernel_size=4, layerNorm=config.layerNorm, layerNormRes=1)
       
     # fully-connected layer
     linearObj = nn.Linear(in_features=self.nc2, out_features=1)
@@ -325,6 +337,10 @@ class Discriminator(nn.Module):
     
     return layers
       
+  def grow_X_levels(self, extraLevels):
+    for l in range(extraLevels):
+      self.grow_network()
+
   def grow_network(self):
     print('Growing Discriminator')
     newNet = nn.Sequential()
@@ -333,20 +349,25 @@ class Discriminator(nn.Module):
     self.resX = config.posResX[self.gl]
     self.resY = config.posResY[self.gl]
 
-    self.nc1 = config.ndc[config.nrLevels - self.gl - 2] # nr channels in first layer
-    self.nc2 = config.ndc[config.nrLevels - self.gl - 1] # nr channels in first layer
+    #self.nc1 = config.ndc[config.nrLevels - self.gl - 2] # before second conv
+    #self.nc2 = config.ndc[config.nrLevels - self.gl - 1] # after second conv
+    self.nc1 = config.ndc[self.gl + 1]  # before second conv
+    self.nc2 = config.ndc[self.gl] # after second conv
+    assert self.nc1 <= self.nc2
+
 
     # convert output to Image
     newNet.add_module('fromImage', self.fromImage())
     
     # Conv 3x3
-    newNet.add_module('conv%d_1' % self.gl, conv(self.nc1, self.nc1, padding=1, seq=True, batchNorm=config.batchNorm))    
+    newNet.add_module('conv%d_1' % self.gl, conv(self.nc1, self.nc1, padding=1, seq=True, layerNorm=config.layerNorm, layerNormRes=self.resX))    
 
     # Conv 3x3
-    newNet.add_module('conv%d_2' % self.gl, conv(self.nc1, self.nc2, padding=1, seq=True, batchNorm=config.batchNorm))    
+    newNet.add_module('conv%d_2' % self.gl, conv(self.nc1, self.nc2, padding=1, seq=True, layerNorm=config.layerNorm, layerNormRes=self.resX))    
 
     # downsample
-    newNet.add_module('downsample%d' % self.gl, Downsample(size=oldRes, mode='bilinear'))
+    #newNet.add_module('downsample%d' % self.gl, Downsample(size=oldRes, mode='bilinear'))
+    newNet.add_module('downsample%d' % self.gl, nn.AvgPool2d(kernel_size=2))
 
     print('self.net.named_children',list(self.net.named_children()))
     for name, module in self.net.named_children():

@@ -30,7 +30,7 @@ workers = [10,10,10,0,0,0,0,0,0]
 #nrImgsToLoad = 40000
 nrImgsToLoad = 369000
 
-loadBatchesFromFile = False
+loadBatchesFromFile = True
 
 batchFiles = ['generated/batches/r%d_%d.pt' % (r, nrImgsToLoad) for r in posResX]
 
@@ -39,28 +39,32 @@ keepBatchesInMemory = [True, True, True, True, True, True, True, True, True]
 # Number of channels in the training images. For grayscale X-ray images this is 1
 nc = 1 
 
-batchNorm=True
+batchNorm = True
+
+layerNorm = True
 
 
 # number of channels at each layer of generator (first is the dimension of latent vector)
+#ngc = [512, 512, 512, 512, 256, 128, 64, 32, 16]
 ngc = [512, 512, 512, 512, 256, 128, 64, 32, 16]
-#ngc = [12, 12, 12, 512, 256, 128, 64, 32, 16]
 
-# number of channels at each layer of discriminator 
-ndc = [32, 64, 128, 256, 512, 512, 512, 512, 512]
-#ndc = [32, 64, 128, 256, 512, 512, 12, 12, 12]
+# number of channels at each layer of discriminator, in reverse order (from deep layers to shallow layers) 
+#ndc = [512,512,512,512,512,256,128,64,32] 
+ndc = [512,512,512,512,512,256,128,64,32] 
+#ndc = [32, 64, 128, 256, 512, 512, 512, 512, 512]
+#ndc = [32, 64, 128, 256, 512, 512, 3, 3, 3]
 
 ngf = 10
 ndf = 10
 
-#latDim = ngc[0] # dimension of latent vector
-latDim = 20
+latDim = ngc[0] # dimension of latent vector
+#latDim = 20
 
 #assert nrLevels == len(ngc)
 #assert nrLevels == len(ndc)
 
 # Number of training epochs
-numEpochs = 300
+numEpochs = [50,10,10,10,10,10,10,10,10]
 
 # Learning rate for optimizers
 lr_G = 0.001
@@ -76,7 +80,9 @@ lambdaGrad = 0.1
 
 n_critic = 5
 
-outFolder = ['generated/l%s_lr%s_ngf%d_ndf%d_lD%d_b%d_beta%s' % (lambdaGrad, lr_G, ngf, ndf, latDim, batchSize[l], beta1) for l in range(nrLevels)]
+#outFolder = ['generated/l%s_lr%s_ngf%d_ndf%d_lD%d_b%d_beta%s' % (lambdaGrad, lr_G, ngf, ndf, latDim, batchSize[l], beta1) for l in range(nrLevels)]
+outFolder = ['generated/lev%d_l%s_lr%s_ngc%d_ndc%d_lD%d_b%d_beta%d' % (l, lambdaGrad, lr_G, ngc[l], ndc[l], latDim, batchSize[l], beta1) for l in range(nrLevels)]
+
 
 # model save path
 modelSavePaths = ['%s/lev%d-model-%dx%d_b%d.pt' % (outFolder[l], l, posResX[l], posResY[l], batchSize[l]) for l in range(nrLevels)]
