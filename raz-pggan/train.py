@@ -25,6 +25,7 @@ import time
 #from cvtorchvision import cvtransforms
 import importlib
 import pickle
+import socket
 
 #from config import *
 import config
@@ -312,6 +313,11 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
 
   one = torch.tensor(1, dtype=torch.float).cuda()
   mone = one * -1
+  
+  nrBatches = len(dataBatches)
+  batchesSoFar = 0
+  totalBatches = config.numEpochs[l] * nrBatches
+  nrBatchesToAddAlpha = int(totalBatches / 100 / 2)
 
   print("Starting Training Loop...")
   # For each epoch
@@ -322,7 +328,19 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
       # For each batch in the DataLoaderOptimised
       #for i, data in enumerate(loader, 0):
       for i, data in enumerate(dataBatches,0):
+          batchesSoFar += 1
 
+          if batchesSoFar % nrBatchesToAddAlpha == 0:
+            # multiply by 2, as we want newAlpha to be 1 at 50% progress
+            newAlpha = 2 * (batchesSoFar / totalBatches)
+            if newAlpha <= 1.0:
+              netG.updateAlpha(newAlpha)
+              netD.updateAlpha(newAlpha)
+            else:
+               # stop blending. future updates to alpha have no effect until increase in resolution
+              netG.stopBlending()
+              netD.stopBlending()
+          
           ############################
           # (1) Update D network: maximize log(D(x)) + log(1 - D(G(z)))
           ###########################
@@ -437,9 +455,14 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
           if i % 10000 == 0:
             with torch.no_grad():
               fake = netG(fixed_noise).detach().cpu()
-            img_list.append(vutils.make_grid(fake, padding=2, normalize=True, nrow=nrows))
+              #asd
+              #print(fake.shape)
+              # keep track of all images in list for gnerating animated gif
+              img_list.append(vutils.make_grid(fake, padding=2, normalize=True, nrow=nrows))
+              #print(img_list)
     
             fig = pl.figure(figsize=(8,8))
+            pl.clf()
             pl.title("Fake Images")
             pl.imshow(np.transpose(img_list[-1],(1,2,0)))
             #fig.show()
@@ -531,7 +554,7 @@ if __name__ == '__main__':
 
   # curRes = current resolution     config.posRes = list of possible resolutions
   for l in range(config.startResLevel, config.nrLevels):
-    os.system("printf '\033]2;%s\033\\'" % config.outFolder[l])
+    os.system("printf '\033]2;%s-%s\033\\'" % (socket.gethostname(), config.outFolder[l]))
     dataBatches = loadBatches(l)
     print(len(dataBatches))
     oneLevel(netG, netD, criterion, dataBatches, l)

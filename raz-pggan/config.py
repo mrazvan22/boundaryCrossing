@@ -43,6 +43,10 @@ batchNorm = True
 
 layerNorm = True
 
+pixelNorm = True # generator only
+
+equalizeLr = True
+
 
 # number of channels at each layer of generator (first is the dimension of latent vector)
 #ngc = [512, 512, 512, 512, 256, 128, 64, 32, 16]
