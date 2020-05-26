@@ -1,17 +1,67 @@
 import torch.nn as nn
 import config
+import math
+import numpy as np
 
+class LinearEq(nn.Module):
+  def __init__(self, in_features, out_features, leakyParam=0):
+    super().__init__()    
+    self.module = nn.Linear(in_features, out_features)
+    size = self.module.weight.size()
+    #print('weight size', size)
+    self.std = math.sqrt(2 / (np.prod(size[1:]) * (1 + leakyParam ** 2)))
+  
+    nn.init.normal_(self.module.weight, 0.0, 1)
+    nn.init.constant_(self.module.bias, 0)
+
+
+  def forward(self, x):
+    return self.std * self.module(x)
+
+class Conv2dEq(nn.Module):
+  def __init__(self, in_channels, out_channels, kernel_size, stride, padding, leakyParam):
+    super().__init__()
+    self.module = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding)
+    size = self.module.weight.size()
+    #print('weight size', size)
+    self.std = math.sqrt(2 / (np.prod(size[1:]) * (1 + leakyParam ** 2)))
+  
+    nn.init.normal_(self.module.weight, 0.0, 1)
+    nn.init.constant_(self.module.bias, 0)
+  
+  def forward(self, x):
+    return self.std * self.module(x)
+     
+class ConvTranspose2dEq(nn.Module):
+  def __init__(self, in_channels, out_channels, kernel_size, stride, padding, leakyParam):
+    super().__init__()
+    self.module = nn.ConvTranspose2d(in_channels, out_channels, kernel_size, stride, padding)
+    size = self.module.weight.size()
+    print('weight size', size)
+    self.std = math.sqrt(2 / (np.prod(size[1:]) * (1 + leakyParam ** 2)))
+    
+    nn.init.normal_(self.module.weight, 0.0, 1)
+    nn.init.constant_(self.module.bias, 0)
+  
+  def forward(self, x):
+    return self.std * self.module(x)
+    
+
+  # like the standard convolution, but also adde ReLU layer and defaults to kernel size 3
 
 def conv(in_channels, out_channels, kernel_size=3, stride=1, padding=0, leaky=True, transpose=False, seq=False, batchNorm=False, layerNorm=False, layerNormRes=None):
   # like the standard convolution, but also adde ReLU layer and defaults to kernel size 3
   if transpose:
-    convFunc = nn.ConvTranspose2d
+    #convFunc = nn.ConvTranspose2d
+    convFunc = ConvTranspose2dEq
   else:
-    convFunc = nn.Conv2d
+    #convFunc = nn.Conv2d
+    convFunc = Conv2dEq
   
-  convObj = convFunc(in_channels, out_channels, kernel_size, stride, padding)
-  nn.init.normal_(convObj.weight, 0.0, 1)
-  nn.init.constant_(convObj.bias, 0)
+  
+  convObj = convFunc(in_channels, out_channels, kernel_size, stride, padding, config.leakyParam)
+  #nn.init.normal_(convObj.weight, 0.0, 1)
+  #nn.init.constant_(convObj.bias, 0)
   layers = [convObj]
   
   if batchNorm:
@@ -22,10 +72,12 @@ def conv(in_channels, out_channels, kernel_size=3, stride=1, padding=0, leaky=Tr
   
   if layerNorm:
     layerNormObj = nn.LayerNorm(normalized_shape=(out_channels,layerNormRes,layerNormRes))
+    nn.init.normal_(layerNormObj.weight, 1.0, 0.02)
+    nn.init.constant_(layerNormObj.bias, 0)
     layers += [layerNormObj]    
 
   if leaky:                 
-    layers += [nn.LeakyReLU(0.2, inplace=True)]
+    layers += [nn.LeakyReLU(config.leakyParam, inplace=True)]
   else:
     layers += [nn.ReLU()]
 
@@ -325,9 +377,9 @@ class Discriminator(nn.Module):
     layers += conv(self.nc2, self.nc2, kernel_size=4, layerNorm=config.layerNorm, layerNormRes=1)
       
     # fully-connected layer
-    linearObj = nn.Linear(in_features=self.nc2, out_features=1)
-    nn.init.normal_(linearObj.weight, 0.0, 1)
-    nn.init.constant_(linearObj.bias, 0)
+    linearObj = LinearEq(in_features=self.nc2, out_features=1)
+    #nn.init.normal_(linearObj.weight, 0.0, 1)
+    #nn.init.constant_(linearObj.bias, 0)
 
     layers += [
       nn.Flatten(),

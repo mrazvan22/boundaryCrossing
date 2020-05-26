@@ -50,7 +50,7 @@ ngc = [512, 512, 512, 512, 256, 128, 64, 32, 16]
 
 # number of channels at each layer of discriminator, in reverse order (from deep layers to shallow layers) 
 #ndc = [512,512,512,512,512,256,128,64,32] 
-ndc = [512,512,512,512,512,256,128,64,32] 
+ndc = [512,512,512,512,512,256,128,64,32]
 #ndc = [32, 64, 128, 256, 512, 512, 512, 512, 512]
 #ndc = [32, 64, 128, 256, 512, 512, 3, 3, 3]
 
@@ -64,11 +64,13 @@ latDim = ngc[0] # dimension of latent vector
 #assert nrLevels == len(ndc)
 
 # Number of training epochs
-numEpochs = [50,10,10,10,10,10,10,10,10]
+numEpochs = [10,10,10,10,10,10,10,10,10]
 
 # Learning rate for optimizers
 lr_G = 0.001
 lr_D = 0.001
+
+leakyParam = 0.2
 
 # Beta1 hyperparam for Adam optimizers
 beta1 = 0.9

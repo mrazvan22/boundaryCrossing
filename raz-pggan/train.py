@@ -34,7 +34,7 @@ import network
 
 
 # Set random seed for reproducibility
-manualSeed = 2
+manualSeed = 4
 #manualSeed = random.randint(1, 10000) # use if you want new results
 print("Random Seed: ", manualSeed)
 random.seed(manualSeed)
@@ -97,7 +97,7 @@ def initModels():
 
     # Apply the weights_init fuconfig.nction to randomly initialize all weights
     #  to mean=0, stdev=0.2.
-    netG.apply(weights_init)
+    #netG.apply(weights_init)
 
     # Print the model
     print(netG)
@@ -116,7 +116,7 @@ def initModels():
 
     # Apply the weights_init fuconfig.nction to randomly initialize all weights
     #  to mean=0, stdev=0.2.
-    netD.apply(weights_init)
+    #netD.apply(weights_init)
 
     # Print the model
     print(netD)
