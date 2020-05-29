@@ -94,7 +94,7 @@ def initModels():
 
     # Handle multi-gpu if desired
     if parallelCuda:
-      netG = nn.DataParallel(netG, list(range(config.ngpu)))
+      netG = network.MyDataParallel(netG, list(range(config.ngpu))) # allows fall-though of custom attributes
 
     # Apply the weights_init fuconfig.nction to randomly initialize all weights
     #  to mean=0, stdev=0.2.
@@ -113,7 +113,7 @@ def initModels():
 
     # Handle multi-gpu if desired
     if parallelCuda:
-      netD = nn.DataParallel(netD, list(range(config.ngpu)))
+      netD = network.MyDataParallel(netD, list(range(config.ngpu)))
 
     # Apply the weights_init fuconfig.nction to randomly initialize all weights
     #  to mean=0, stdev=0.2.
@@ -142,7 +142,10 @@ def initModels():
     netD.grow_X_levels(extraLevels=config.startResLevel-1)
 
     # load weights from previous checkpoint 
+    print('loading model from %s' % config.modelSavePaths[config.startResLevel - 1])
     checkpoint = torch.load(config.modelSavePaths[config.startResLevel-1])
+    print('G_state', checkpoint['G_state'].keys())
+    print('D_state', checkpoint['D_state'].keys())
     netG.load_state_dict(checkpoint['G_state'])
     netD.load_state_dict(checkpoint['D_state'])
 
@@ -154,8 +157,8 @@ def initModels():
     netD.to(device)
     # Handle multi-gpu if desired
     if parallelCuda:
-      netG = nn.DataParallel(netG, list(range(config.ngpu)))
-      netD = nn.DataParallel(netD, list(range(config.ngpu)))
+      netG = network.MyDataParallel(netG, list(range(config.ngpu)))
+      netD = network.MyDataParallel(netD, list(range(config.ngpu)))
 
     #netG = checkpoint['netG']
     #netD = checkpoint['netD']
@@ -257,12 +260,12 @@ def calc_gradient_penalty(netD, real_data, fake_data):
 
 def oneLevel(netG, netD, criterion, dataBatches, l):
   if l != 0: # grow the network in resolution 
-    if parallelCuda:
-      netG.module.grow_network()
-      netD.module.grow_network()
-    else:
-      netG.grow_network()
-      netD.grow_network()
+    #if parallelCuda:
+    #  netG.module.grow_network()
+    #  netD.module.grow_network()
+    #else:
+    netG.grow_network()
+    netD.grow_network()
     
     netG.to(device)
     print(netG)
@@ -477,9 +480,18 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
   end = time.time()
   print('time for last epoch', end - start)
   
+
+  if parallelCuda:
+    G_state = netG.module.state_dict()
+    D_state = netD.module.state_dict()
+  else:
+    G_state = netG.state_dict()
+    D_state = netD.state_dict()
+
+
   torch.save({
-    'G_state' : netG.state_dict(),
-    'D_state' : netD.state_dict(),
+    'G_state' : G_state,
+    'D_state' : D_state,
     #'netG_' : netG,
     #'netD' : netD,
     'G_losses' : G_losses,
@@ -558,6 +570,6 @@ if __name__ == '__main__':
     dataBatches = loadBatches(l)
     print(len(dataBatches))
     oneLevel(netG, netD, criterion, dataBatches, l)
-    asd    
+    #asd    
 
 

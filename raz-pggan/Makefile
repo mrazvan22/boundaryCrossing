@@ -15,3 +15,9 @@ launchJob:
 
 launchJobLight:
 	ZDOTDIR=/data/vision/polina/users/razvan srun --x11 -N 1 --ntasks-per-node=1 --cpus-per-task=5 --gres=gpu:1  --pty zsh
+
+linkZsh:
+	 ln -s /data/vision/polina/users/razvan/.zshrc ~/.zshrc
+	 ln -s /data/vision/polina/users/razvan/.zsh_aliases ~/.zsh_aliases
+	 ln -s /data/vision/polina/users/razvan/.oh-my-zsh ~/.oh-my-zsh
+	 ln -s /data/vision/polina/users/razvan/.vimrc ~/.vimrc

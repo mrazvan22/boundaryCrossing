@@ -2,16 +2,31 @@ import torch.nn as nn
 import config
 import math
 import numpy as np
+from torchsummary import summary
 
+class MyDataParallel(nn.DataParallel): # allows parameter fall-though
+    def __getattr__(self, name):
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            return getattr(self.module, name)
+
+class PrintLayer(nn.Module):
+  def __init__(self, msg=''):
+    super(PrintLayer, self).__init__()
+    self.msg = msg
+
+  def forward(self, x):
+    print(self.msg,'  shape:', x.shape)
+    return x
 
 class PixelNorm(nn.Module):
   def __init__(self):
     super().__init__()
 
   def forward(self, x, eps=1e-08):
-    print(x.shape)
-    asd
-    return x / ((x ** 2).mean(dim=1) + eps).sqrt()
+    # x is in format BCWH, take mean over channel dim
+    return x / ((x ** 2).mean(dim=1, keepdim=True) + eps).sqrt()
 
 class LinearEq(nn.Module):
   def __init__(self, in_features, out_features, leakyParam, equalizeLr):
@@ -122,87 +137,115 @@ class Downsample(nn.Module):
 
 
 class GeneratorBlock(nn.Module):
-  def __init__(self, gl, nc1, nc2):
+  def __init__(self, gl, nc1, nc2, toImageLayerOld):
     super().__init__()
 
-    self.nc1 = nc1
-    self.nc2 = nc2
+    self.nc1 = nc1 # input channels
+    self.nc2 = nc2 # output channels
     self.gl = gl
+    newRes = (config.posResX[self.gl], config.posResY[self.gl])
 
     # input image is already upsampled to the higher resolution
     
     # construct block with two extra layers
     self.block = nn.Sequential()
+
+    # upsample4
+    self.block.add_module('upsample%d' % self.gl, nn.Upsample(size=newRes))
+
     # Conv 3x3
+    #self.block.add_module('debug', PrintLayer(msg='GenBlock0'))    
     self.block.add_module('conv%d_1' % self.gl, conv(self.nc1, self.nc2, padding=1, seq=True, pixelNorm=config.pixelNorm))    
 
     # Conv 3x3
+    #self.block.add_module('debug', PrintLayer(msg='GenBlock1'))    
     self.block.add_module('conv%d_2' % self.gl, conv(self.nc2, self.nc2, padding=1, seq=True, pixelNorm=config.pixelNorm))    
   
-    self.block.add_module('toImage%d' % self.gl, self.toImage())    
+    # need to create toImageLayer outside of the block, as at next growth lavel it will be discarded
+    #self.block.add_module('debug', PrintLayer(msg='GenBlock2'))    
+    self.toImageLayer = self.toImage(inChannels=self.nc2)    
 
     self.alpha = 0 # blending parameter, starts at 0 and ends at 1
 
     # for blending, construct parallel block which converts straight to image
-    self.noChangeBlock = self.toImage()
+    self.noChangeBlock = nn.Sequential()
+    # first convert to Image, as the params have already been learned
+    self.noChangeBlock.add_module('toImageOld', toImageLayerOld)
+    
+    # then upsample after toImage. Don't upsample before as that might require re-lertning the toImage convolution
+    self.noChangeBlock.add_module('upsample%d' % self.gl, nn.Upsample(size=newRes))
+
 
 
   def forward(self, x):
     # input image is already upsampled to the higher resolution
-    xBlock = self.block(x) # upsampled + passed through new layers
+    xBlock = self.toImageLayer(self.block(x)) # upsampled + passed through new layers
     xImg = self.noChangeBlock(x) # upsampled, from old network
+    if config.debug:
+      if xBlock.shape[1] != xImg.shape[1] or xBlock.shape[2] != xImg.shape[2] or xBlock.shape[3] != xImg.shape[3]:
+        print('xBlock', xBlock.shape)
+        print('xImg', xImg.shape)
+        raise ValueError('tensor shapes dont match')
     
     return xBlock * self.alpha + xImg * (1 - self.alpha)
   
-  def toImage(self):
+  def toImage(self, inChannels):
     # to RGB
-    layers = conv(self.nc2, config.nc, kernel_size=1)
+    layers = conv(inChannels, config.nc, kernel_size=1)
     layers += [nn.Tanh()]
     return nn.Sequential(*layers)
   
 
-
 class DiscriminatorBlock(nn.Module):
-  def __init__(self, gl, nc1, nc2, resX, resY):
+  def __init__(self, gl, nc1, nc2, resX, resY, fromImageLayerOld):
     super().__init__()
 
-    self.nc1 = nc1
-    self.nc2 = nc2
+    self.nc1 = nc1 # input channels
+    self.nc2 = nc2 # output channels
     self.gl = gl
     self.resX = resX
     self.resY = resY
 
+    # convert output to Image
+    # need to create fromImageLayer outside of the block, as at next growth lavel it will be discarded
+    self.fromImageLayer = self.fromImage(outChannels=self.nc1)
+
+
     # input image is already upsampled to the higher resolution
     self.block = nn.Sequential()
-
-    # convert output to Image
-    self.block.add_module('fromImage', self.fromImage())
     
     # Conv 3x3
+    #self.block.add_module('debug', PrintLayer(msg='DiscBlock0'))    
     self.block.add_module('conv%d_1' % self.gl, conv(self.nc1, self.nc1, padding=1, seq=True, layerNorm=config.layerNorm, layerNormRes=self.resX))    
 
     # Conv 3x3
+    #self.block.add_module('debug', PrintLayer(msg='DiscBlock1'))    
     self.block.add_module('conv%d_2' % self.gl, conv(self.nc1, self.nc2, padding=1, seq=True, layerNorm=config.layerNorm, layerNormRes=self.resX))    
 
     # downsample
+    #self.block.add_module('debug', PrintLayer(msg='DiscBlock2'))    
     self.block.add_module('downsample%d' % self.gl, nn.AvgPool2d(kernel_size=2))
 
     self.noChangeBlock = nn.Sequential()
     self.noChangeBlock.add_module('downsample%d' % self.gl, nn.AvgPool2d(kernel_size=2))
-    self.noChangeBlock.add_module('fromImage', self.fromImage())
-    
+    #self.noChangeBlock.add_module('fromImage', self.fromImage(outChannels=self.nc2))
+
+    # allocate old fromImage layer since that already converged to good solution
+    self.noChangeBlock.add_module('fromImage', fromImageLayerOld)
+        
+
     self.alpha = 0 # blending parameter, starts at 0 and ends at 1
 
   def forward(self, x):
     # input image is already upsampled to the higher resolution
-    xBlock = self.block(x) # passed through new layers + downsampled
+    xBlock = self.block(self.fromImageLayer(x)) # passed through new layers + downsampled
     xImg = self.noChangeBlock(x) # from old network + downsampled
     
     return xBlock * self.alpha + xImg * (1 - self.alpha)
   
-  def fromImage(self): # like fromRGB but for 1 channel
+  def fromImage(self, outChannels): # like fromRGB but for 1 channel
     # conv 1x1
-    return conv(config.nc, self.nc1, kernel_size=1, seq=True)
+    return conv(config.nc, outChannels, kernel_size=1, seq=True)
 
  
 
@@ -217,22 +260,27 @@ class Generator(nn.Module):
 
     self.resX = config.posResX[self.gl]
     self.resY = config.posResX[self.gl]
-    layers = self.firstBlock() # list of layers
-    self.net = nn.Sequential(*layers)
+    
+    self.net = nn.Sequential()
+    self.net.add_module('firstBlock', self.firstBlock()) 
     self.net.add_module('toImage', self.toImage())
+
+    # wrap in another sequential because we will later pop it during growth. 
+    self.net = nn.Sequential(self.net) 
 
     # reference to latest added block, for updating it's blending parameter
     self.newBlock = None 
 
   def firstBlock(self):
     #input latent vector ngc x 1 x 1
-    
+    block = nn.Sequential()    
+
     # conv 4x4
-    layers = conv(self.nc1, self.nc2, kernel_size=4, transpose=True, pixelNorm=config.pixelNorm)                
+    block.add_module('conv1-4x4', conv(self.nc1, self.nc2, kernel_size=4, transpose=True, pixelNorm=config.pixelNorm, seq=True))
     
     # Conv 3x3, padding of 1
-    layers += conv(self.nc2, self.nc2, padding=1, pixelNorm=config.pixelNorm)
-    return layers
+    block.add_module('conv2-3x3', conv(self.nc2, self.nc2, padding=1, pixelNorm=config.pixelNorm, seq=True))
+    return block
 
   def toImage(self):
     # to RGB
@@ -243,35 +291,35 @@ class Generator(nn.Module):
   def grow_X_levels(self, extraLevels):
     for l in range(extraLevels):
       self.grow_network()
+      self.stopBlending()
 
   def grow_network(self):
     print('growing Generator')
-    newNet = nn.Sequential()
+    #newNet = nn.Sequential()
     self.gl += 1 # add +1 to the growth level
     self.resX = config.posResX[self.gl]
     self.resY = config.posResX[self.gl]
     self.nc1 = config.ngc[self.gl-1] # nr channels before first conv in block (upsample)
     self.nc2 = config.ngc[self.gl] # nr channels after first conv in block (conv1 + conv2)
 
-    print('self.net.named_children',list(self.net.named_children()))
-    for name, module in self.net.named_children():
-      if name != 'toImage':
-        newNet.add_module(name, module) # make new structure
-        newNet[-1].load_state_dict(module.state_dict())
+    # extract the toImage layer from the network to pass it to the new GeneratorBlock below
+    toImageLayerOld = self.net[-1][1]
+    self.net[-1] = self.net[-1][0]
+
+    #print('self.net.named_children',list(self.net.named_children()))
+    #for name, module in self.net.named_children():
+    #  newNet.add_module(name, module) # make new structure
+    #  newNet[-1].load_state_dict(module.state_dict())
     
 
 
-    # upsample4
-    newRes = (config.posResX[self.gl], config.posResY[self.gl])
-    newNet.add_module('upsample%d' % self.gl, nn.Upsample(size=newRes))
-
-    self.newBlock = GeneratorBlock(self.gl, self.nc1, self.nc2)
-    newNet.add_module('new_block%d' % self.gl,self.newBlock)
+    self.newBlock = GeneratorBlock(self.gl, self.nc1, self.nc2, toImageLayerOld)
+    self.net.add_module('new_block%d' % self.gl,self.newBlock)
 
     # convert output to Image
     #newNet.add_module('toImage', self.toImage())
 
-    self.net = newNet
+    #self.net = newNet
 
 
   def updateAlpha(self, alpha):
@@ -281,19 +329,35 @@ class Generator(nn.Module):
   
   def stopBlending(self):
     if self.newBlock is not None:
-      self.net[-1] = self.newBlock.block # 
+      blockWithToImage = nn.Sequential()
+      # only take the newBlock.block and toImage layers. Exclude noChangeBlock
+      blockWithToImage.add_module('block%d' % self.gl, self.newBlock.block)
+      blockWithToImage.add_module('toImage', self.newBlock.toImageLayer)
+      self.net[-1] = blockWithToImage
       print('stopped blending')
       print('netG', self.net)
       self.newBlock = None
 
   def forward(self, input):
-    assert input.shape[1] == config.latDim
-    output = self.net(input)
-    if output.shape[2] != self.resX or output.shape[3] != self.resY:
-      print('G output shape', output.shape)
-      print('G res=(%d, %d)' % (self.resX, self.resY))
-      raise ValueError('output dimension in generator does not match')
-    return output
+    if config.debug:
+      assert input.shape[1] == config.latDim
+      
+      x = input
+      print(x.size()) 
+      for layer in self.net:
+        x = layer(x)
+        print(x.size())
+
+      output = x
+      if output.shape[2] != self.resX or output.shape[3] != self.resY:
+        print('G output shape', output.shape)
+        print('G res=(%d, %d)' % (self.resX, self.resY))
+        raise ValueError('output dimension in generator does not match')
+
+      return output
+    else:
+      return self.net(input)
+
 
 # torch.nn.Conv2d(in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True, padding_mode='zeros')
 
@@ -314,6 +378,9 @@ class Discriminator(nn.Module):
     self.net = nn.Sequential()
     self.net.add_module('fromImage', self.fromImage())
     self.net.add_module('lastBlock', nn.Sequential(*self.lastBlock()))
+    
+    # wrap in another sequential because we will later pop it during growth. 
+    self.net = nn.Sequential(self.net) 
 
     # reference to latest added block, for updating it's blending parameter
     self.newBlock = None
@@ -325,27 +392,34 @@ class Discriminator(nn.Module):
 
   def lastBlock(self):
     # conv 3x3, padding=1
-    layers = conv(self.nc1, self.nc1, padding=1, layerNorm=config.layerNorm, layerNormRes=4)
+    block = nn.Sequential()
+    #block.add_module('debug', PrintLayer(msg='DiscLastBlock0'))
+    block.add_module('conv1-3x3',conv(self.nc1, self.nc1, padding=1, layerNorm=config.layerNorm, layerNormRes=4, seq=True))
       
     # conv 4x4
-    layers += conv(self.nc2, self.nc2, kernel_size=4, layerNorm=config.layerNorm, layerNormRes=1)
+    #block.add_module('debug', PrintLayer(msg='DiscLastBlock1'))
+    block.add_module('conv2-4x4',conv(self.nc2, self.nc2, kernel_size=4, layerNorm=config.layerNorm, layerNormRes=1, seq=True))
       
     # fully-connected layer
-    linearObj = LinearEq(in_features=self.nc2, out_features=1, leakyParam=0, equalizeLr=config.equalizeLr)
-    #nn.init.normal_(linearObj.weight, 0.0, 1)
-    #nn.init.constant_(linearObj.bias, 0)
 
-    layers += [
-      nn.Flatten(),
-      linearObj,
-      nn.Sigmoid()
-         ]
+    #block.add_module('debug', PrintLayer(msg='DiscLastBlock1'))
+    block.add_module('flatten', nn.Flatten())
+    block.add_module('linear', LinearEq(in_features=self.nc2, out_features=1, leakyParam=0, equalizeLr=config.equalizeLr)
+)
+    block.add_module('sigmoid', nn.Sigmoid())
+
+    #layers += [
+    #  nn.Flatten(),
+    #  linearObj,
+    #  nn.Sigmoid()
+    #     ]
     
-    return layers
+    return block
       
   def grow_X_levels(self, extraLevels):
     for l in range(extraLevels):
       self.grow_network()
+      self.stopBlending()
 
   def grow_network(self):
     print('Growing Discriminator')
@@ -361,15 +435,20 @@ class Discriminator(nn.Module):
     self.nc2 = config.ndc[self.gl] # after second conv
     assert self.nc1 <= self.nc2
 
-    self.newBlock = DiscriminatorBlock(self.gl, self.nc1, self.nc2, self.resX, self.resY)
+    # pop the fromImageLayer from previous growth level
+    #print(list(self.net[0].named_children()))
+    assert len(self.net[0]) == 2
+    fromImageLayerOld = self.net[0][0]
+    self.net[0] = self.net[0][1] # remove from
+
+    self.newBlock = DiscriminatorBlock(self.gl, self.nc1, self.nc2, self.resX, self.resY, fromImageLayerOld)
     newNet.add_module('block%d' % self.gl, self.newBlock)
 
 
     print('self.net.named_children',list(self.net.named_children()))
     for name, module in self.net.named_children():
-      if name != 'fromImage':
-        newNet.add_module(name, module) # make new structure
-        newNet[-1].load_state_dict(module.state_dict())
+      newNet.add_module(name, module) # make new structure
+      newNet[-1].load_state_dict(module.state_dict())
 
     self.net = newNet
 
@@ -380,20 +459,46 @@ class Discriminator(nn.Module):
 
   def stopBlending(self):
     if self.newBlock is not None:
-      self.net[0] = self.newBlock.block # 
+      blockWithFromImage = nn.Sequential()
+      # only take the fromImage and newBlock.block layers. Exclude noChangeBlock
+      blockWithFromImage.add_module('fromImage', self.newBlock.fromImageLayer)
+      blockWithFromImage.add_module('block%d' % self.gl, self.newBlock.block)
+      self.net[0] = blockWithFromImage
       print('stopped blending')
       print('netD', self.net)
       self.newBlock = None
 
+  #def removeFromImageLayer(self):
+  #  # remove first layer, fromImage, in order to grow the network
+  #  self.net[0] = self.net[0][1]
+
   def forward(self, input):
-    assert input.shape[1] == config.nc
-    if input.shape[2] != self.resX or input.shape[3] != self.resY:
-      print('D input shape', input.shape)
-      print('D res=(%d, %d)' % (self.resX, self.resY))
-      raise ValueError('input dimension in discriminator does not match')
-    assert input.shape[2] == self.resX
-    assert input.shape[3] == self.resY
-    return self.net(input)
+    
+    if config.debug:
+      assert input.shape[1] == config.nc
+      if input.shape[2] != self.resX or input.shape[3] != self.resY:
+        print('D input shape', input.shape)
+        print('D res=(%d, %d)' % (self.resX, self.resY))
+        raise ValueError('input dimension in discriminator does not match')
+      assert input.shape[2] == self.resX
+      assert input.shape[3] == self.resY
+
+      x = input
+      #print('in tensor size', x.size())
+      print('\n\n\n\n--------------\n\n', 'named_modules', [x[0] for x in list(self.net.named_children())] )
+      #for name, module in self.net.named_children():
+      #print(summary(self.net, (1,self.resX,self.resY)))
+      print('nr modules', len(self.net))
+      for module in self.net:
+        #for layer in module:
+        #print('module', name, '  in tensor size:', x.size()) 
+        print('in tensor size:', x.size(), '    module', module) 
+        assert x.shape[0]
+        x = module(x)
+        #print('module', name, '  out tensor size:', x.size()) 
+      return x
+    else:
+      return self.net(input)
 
 
 ###########################################################
