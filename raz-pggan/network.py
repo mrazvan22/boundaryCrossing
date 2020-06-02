@@ -144,6 +144,8 @@ class GeneratorBlock(nn.Module):
     self.nc2 = nc2 # output channels
     self.gl = gl
     newRes = (config.posResX[self.gl], config.posResY[self.gl])
+    self.resX = newRes[0]
+    self.resY = newRes[1]
 
     # input image is already upsampled to the higher resolution
     
@@ -155,11 +157,11 @@ class GeneratorBlock(nn.Module):
 
     # Conv 3x3
     #self.block.add_module('debug', PrintLayer(msg='GenBlock0'))    
-    self.block.add_module('conv%d_1' % self.gl, conv(self.nc1, self.nc2, padding=1, seq=True, pixelNorm=config.pixelNorm))    
+    self.block.add_module('conv%d_1' % self.gl, conv(self.nc1, self.nc2, padding=1, seq=True, batchNorm=config.batchNormG, layerNorm=config.layerNormG, layerNormRes=self.resX, pixelNorm=config.pixelNormG))    
 
     # Conv 3x3
     #self.block.add_module('debug', PrintLayer(msg='GenBlock1'))    
-    self.block.add_module('conv%d_2' % self.gl, conv(self.nc2, self.nc2, padding=1, seq=True, pixelNorm=config.pixelNorm))    
+    self.block.add_module('conv%d_2' % self.gl, conv(self.nc2, self.nc2, padding=1, seq=True, batchNorm=config.batchNormG, layerNorm=config.layerNormG, layerNormRes=self.resX, pixelNorm=config.pixelNormG))    
   
     # need to create toImageLayer outside of the block, as at next growth lavel it will be discarded
     #self.block.add_module('debug', PrintLayer(msg='GenBlock2'))    
@@ -216,11 +218,11 @@ class DiscriminatorBlock(nn.Module):
     
     # Conv 3x3
     #self.block.add_module('debug', PrintLayer(msg='DiscBlock0'))    
-    self.block.add_module('conv%d_1' % self.gl, conv(self.nc1, self.nc1, padding=1, seq=True, layerNorm=config.layerNorm, layerNormRes=self.resX))    
+    self.block.add_module('conv%d_1' % self.gl, conv(self.nc1, self.nc1, padding=1, seq=True, batchNorm=config.batchNormD, layerNorm=config.layerNormD, layerNormRes=self.resX, pixelNorm=config.pixelNormD))    
 
     # Conv 3x3
     #self.block.add_module('debug', PrintLayer(msg='DiscBlock1'))    
-    self.block.add_module('conv%d_2' % self.gl, conv(self.nc1, self.nc2, padding=1, seq=True, layerNorm=config.layerNorm, layerNormRes=self.resX))    
+    self.block.add_module('conv%d_2' % self.gl, conv(self.nc1, self.nc2, padding=1, seq=True, batchNorm=config.batchNormD, layerNorm=config.layerNormD, layerNormRes=self.resX, pixelNorm=config.pixelNormD))    
 
     # downsample
     #self.block.add_module('debug', PrintLayer(msg='DiscBlock2'))    
@@ -276,10 +278,10 @@ class Generator(nn.Module):
     block = nn.Sequential()    
 
     # conv 4x4
-    block.add_module('conv1-4x4', conv(self.nc1, self.nc2, kernel_size=4, transpose=True, pixelNorm=config.pixelNorm, seq=True))
+    block.add_module('conv1-4x4', conv(self.nc1, self.nc2, kernel_size=4, transpose=True, seq=True, batchNorm=config.batchNormG, layerNorm=config.layerNormG, layerNormRes=self.resX, pixelNorm=config.pixelNormG))
     
     # Conv 3x3, padding of 1
-    block.add_module('conv2-3x3', conv(self.nc2, self.nc2, padding=1, pixelNorm=config.pixelNorm, seq=True))
+    block.add_module('conv2-3x3', conv(self.nc2, self.nc2, padding=1, seq=True, batchNorm=config.batchNormG, layerNorm=config.layerNormG, layerNormRes=self.resX, pixelNorm=config.pixelNormG))
     return block
 
   def toImage(self):
@@ -394,11 +396,11 @@ class Discriminator(nn.Module):
     # conv 3x3, padding=1
     block = nn.Sequential()
     #block.add_module('debug', PrintLayer(msg='DiscLastBlock0'))
-    block.add_module('conv1-3x3',conv(self.nc1, self.nc1, padding=1, layerNorm=config.layerNorm, layerNormRes=4, seq=True))
+    block.add_module('conv1-3x3',conv(self.nc1, self.nc1, padding=1, seq=True, batchNorm=config.batchNormG, layerNorm=config.layerNormG, layerNormRes=self.resX, pixelNorm=config.pixelNormG))
       
     # conv 4x4
     #block.add_module('debug', PrintLayer(msg='DiscLastBlock1'))
-    block.add_module('conv2-4x4',conv(self.nc2, self.nc2, kernel_size=4, layerNorm=config.layerNorm, layerNormRes=1, seq=True))
+    block.add_module('conv2-4x4',conv(self.nc2, self.nc2, kernel_size=4, seq=True, batchNorm=config.batchNormG, layerNorm=config.layerNormG, layerNormRes=1, pixelNorm=config.pixelNormG))
       
     # fully-connected layer
 

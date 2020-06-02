@@ -8,7 +8,7 @@ posResY = posResX
 #nrLevels = len(posResX)
 nrLevels = 5
 
-startResLevel = 1 # starting resolution level
+startResLevel = 0 # starting resolution level
 
 #debug = True
 debug = False
@@ -20,8 +20,8 @@ batchSize = [64,64,64,64,64,64,64,16,4]
 workers = [10,10,10,0,0,0,0,0,0]
 
 # for running tests on a subset of the data (max = 369,000)
-nrImgsToLoad = 40000
-#nrImgsToLoad = 369000
+#nrImgsToLoad = 40000
+nrImgsToLoad = 369000
 
 loadBatchesFromFile = True
 
@@ -43,7 +43,7 @@ ndc = [512,512,512,512,512,256,128,64,32]
 #assert nrLevels == len(ndc)
 
 # Number of training epochs
-numEpochs = [1,1,10,10,10,10,10,10,10]
+numEpochs = [10,10,10,10,10,10,10,10,10]
 
 # Learning rate for optimizers
 lr_G = 0.001
@@ -67,11 +67,14 @@ outFolder = ['generated/lev%d_l%s_lr%s_ngc%d_ndc%d_lD%d_b%d_beta%d_i%d' % (l, la
 # model save path
 modelSavePaths = ['%s/lev%d-model-%dx%d_b%d.pt' % (outFolder[l], l, posResX[l], posResY[l], batchSize[l]) for l in range(nrLevels)]
 
-batchNorm = True
+batchNormG = False
+batchNormD = False
 
-layerNorm = True
+layerNormD = False
+layerNormG = True
 
-pixelNorm = True # generator only
+pixelNormD = True # generator only
+pixelNormG = False # generator only
 
 equalizeLr = True
 
