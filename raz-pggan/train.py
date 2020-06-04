@@ -218,7 +218,7 @@ def loadBatches(l):
 
 
 
-def calc_gradient_penalty(netD, real_data, fake_data):
+def calc_gradPenalty(netD, real_data, fake_data):
   batchSize = real_data.shape[0] 
   assert len(real_data.shape) == 4
   epsB = torch.rand(batchSize, 1, 1, 1, device=device) # pytorch broadcasts last 3 dimensions
@@ -251,11 +251,11 @@ def calc_gradient_penalty(netD, real_data, fake_data):
   #print('grads.shape', grads)
   gradNormsB = torch.norm(grads, dim=1) # nrBatches x 1 vector
   #print('gradNormsB', gradNormsB)
-  gradient_penalty = config.lambdaGrad * ((gradNormsB - 1) ** 2).mean()
-  #print('gradient_penalty', gradient_penalty)
+  gradPenalty = config.lambdaGrad * ((gradNormsB - 1) ** 2).mean()
+  #print('gradPenalty', gradPenalty)
 
 
-  return gradient_penalty
+  return gradPenalty, gradNormsB.mean().item()
    
 
 def oneLevel(netG, netD, criterion, dataBatches, l):
@@ -287,7 +287,7 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
     pl.title("Training Images")
     #print(vutils.make_grid(real_batch.to(device), padding=2, normalize=True, nrow=8).cpu())
     #print(np.transpose(vutils.make_grid(real_batch.to(device), padding=2, normalize=True, nrow=8).cpu(),(1,2,0)))
-    pl.imshow(np.transpose(vutils.make_grid(real_batch.to(device), padding=2, normalize=True, nrow=8).cpu(),(1,2,0)))
+    pl.imshow(np.transpose(vutils.make_grid(real_batch.to(device), padding=2, normalize=True, nrow=4).cpu(),(1,2,0)))
     fig.subplots_adjust(left=0,right=1,bottom=0,top=1)
     #pl.show()
     fig.savefig('%s/sampleBatch.png' % config.outFolder[l])
@@ -303,8 +303,8 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
   fake_label = 0
 
   # Setup Adam optimizers for both G and D
-  optimizerD = optim.Adam(netD.parameters(), lr=config.lr_D, betas=(config.beta1, 0.999))
-  optimizerG = optim.Adam(netG.parameters(), lr=config.lr_G, betas=(config.beta1, 0.999))
+  optimizerD = optim.Adam(netD.parameters(), lr=config.lr_D, betas=(config.beta1, 0.99))
+  optimizerG = optim.Adam(netG.parameters(), lr=config.lr_G, betas=(config.beta1, 0.99))
 
   # Training Loop
 
@@ -312,6 +312,9 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
   img_list = []
   G_losses = []
   D_losses = []
+  gradPenaltyI = []
+  gradNormAvgI = []
+
   iters = 0
 
   one = torch.tensor(1, dtype=torch.float).cuda()
@@ -350,13 +353,18 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
           ## Train with all-real batch
           netD.zero_grad()
           # Format batch
+          #print('---------------------------------')
+          #start = time.time()
           real_cpu = data.to(device)
+          #print('data.to(device)', time.time() - start)
           #print('real_cpu.size', real_cpu.size())
         
           b_size = real_cpu.size(0)
          
           # Forward pass real batch through D
+          #start = time.time()
           D_real = netD(real_cpu)
+          #print('netD(real)', time.time() - start)
           # Calculate loss on all-real batch errD_real = E_data(log(D(x)))
           D_real = D_real.view(-1)
           
@@ -365,7 +373,9 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
           #print('D_real_mean', D_real_mean.shape)
           #print('mone', mone.shape)
           D_real_meani = D_real_mean.item()
+          #start = time.time()
           D_real_mean.backward(mone)
+          #print('D_real.backward()', time.time() - start)
           
           #label = torch.full((b_size,), real_label, device=device)
           #errD_real = criterion(D_real, label)
@@ -376,7 +386,9 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
           # Generate batch of latent vectors
           noise = torch.randn(b_size, config.latDim , 1, 1, device=device)
           # Generate fake image batch with G
+          #start = time.time()
           fake = netG(noise)
+          #print('netG(noise)', time.time() - start)
           # Classify all fake batch with D
           D_fake = netD(fake.detach()).view(-1)
 
@@ -393,21 +405,34 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
           #print('fake', fake[0,:,:,:])
           #asd
 
-          #loss = D_fake_mean - D_real_mean + gradient_penalty
+          #loss = D_fake_mean - D_real_mean + gradPenalty
           #loss.backward() # better call backwards in each of the terms separately?
 
           # train with gradient penalty (Wasserstein GP)
-          gradient_penalty = calc_gradient_penalty(netD, real_cpu.data, fake.data)
-          gradient_penalty.backward()
-          gradient_penalty_i = gradient_penalty.item()
-          #gradient_penalty_i = 0
+          #start = time.time()
+          gradPenalty, gradNormAvg = calc_gradPenalty(netD, real_cpu.data, fake.data)
+          
+          #print('calc_gradPenalty()', time.time() - start)
+          #start = time.time()
+          gradPenalty.backward()
+          #print('gradPenalty.backward()', time.time() - start)
+          gradPenalty_i = gradPenalty.item()
+          #gradPenalty_i = 0
 
-          errD = - D_real_meani + D_fake_meani + gradient_penalty_i
+          # add small loss to keep D from drifting too far away from zero
+          lossDrift = 0.001 * (D_real_mean ** 2)     
+          lossDrift.backward()
+
+
+          errD = - D_real_meani + D_fake_meani + gradPenalty_i
+
+          
           #errD = errD_real + errD_fake
-
+        
           # Update D
+          #start = time.time()
           optimizerD.step()
-
+          #print('optimizerD.step()', time.time() - start)
 
           if i % config.n_critic == 0: # only update G evey n_critic iterations
             ############################
@@ -430,7 +455,9 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
             D_fake_mean2i = D_fake_2_mean.item()
            
             errG = - D_fake_mean2i
+            #start = time.time()
             D_fake_2_mean.backward(mone)
+            #print('optimizerG.step()', time.time() - start)
             #label.fill_(real_label)
             #errG = criterion(D_fake_2, label)
             #errG.backward()
@@ -441,21 +468,24 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
 
 
           # Output training stats
-          if i % config.n_critic  == 0 and ( i < 20 or i % 300 == 0) :
+          if i % config.n_critic  == 0 and ( i < 20 or i % 100 == 0) :
             print('D(real)', D_real[:10], D_real.shape)
             print('D(fake)', D_fake[:10], D_fake.shape)
             print('D(fake2)', D_fake_2[:10], D_fake_2.shape)
-            print('gradient_penalty', gradient_penalty_i)
-            print('[%d/%d][%d/%d]\tLoss_D: %.4f\tLoss_G: %.4f\tD(x): %.4f\tD(G(z)): %.4f / %.4f'
+            print('gradPenalty %.2f  gradNormAvg %f' % (gradPenalty, gradNormAvg), '   res:%d x %d' % (config.posResX[l], config.posResY[l]))
+            print('[%d/%d][%d/%d]  Loss_D: %.4f  Loss_G: %.4f  D(x): %.4f  D(G(z)): %.4f / %.4f'
               % (epoch, config.numEpochs[l], i, len(dataBatches),
                  errD, errG, D_real_meani, D_fake_meani, D_fake_mean2i))
 
           # Save Losses for plotting later
           G_losses.append(errG)
           D_losses.append(errD)
+          gradPenaltyI.append(gradPenalty_i)
+          gradNormAvgI.append(gradNormAvg)
+          
 
           # Check how the generator is doing by saving G's output on fixed_noise
-          if i % 10000 == 0:
+          if i % 3000 == 0:
             with torch.no_grad():
               fake = netG(fixed_noise).detach().cpu()
               #asd
@@ -471,9 +501,23 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
             #fig.show()
             fig.subplots_adjust(left=0,right=1,bottom=0,top=1)
             ax = pl.gca()
-            fig.savefig('%s/l%d-fake-e%02d-i%04d.png' % (config.outFolder[l], l, epoch, i))
+            fig.savefig('%s/l%d-fake-e%02d-i%06d.png' % (config.outFolder[l], l, epoch, i))
             pl.close()
  
+
+            fig = pl.figure(figsize=(10,5))
+            pl.title("Generator and Discriminator Loss During Training")
+            pl.plot(G_losses, label="G")
+            pl.plot(D_losses, label="D")
+            pl.plot(gradPenaltyI, label="grad penalty")
+            pl.plot(gradNormAvgI, label="grad norm")
+            pl.xlabel("iterations")
+            pl.ylabel("Loss")
+            pl.legend()
+            fig.savefig('%s/l%d-trainingLoss.png' % (config.outFolder[l], l))
+            pl.close()
+
+
 
           iters += 1
 
@@ -501,8 +545,10 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
 
   fig = pl.figure(figsize=(10,5))
   pl.title("Generator and Discriminator Loss During Training")
-  pl.plot(G_losses,label="G")
-  pl.plot(D_losses,label="D")
+  pl.plot(G_losses, label="G")
+  pl.plot(D_losses, label="D")
+  pl.plot(gradPenaltyI, label="grad penalty")
+  pl.plot(gradNormAvgI, label="grad norm")
   pl.xlabel("iterations")
   pl.ylabel("Loss")
   pl.legend()

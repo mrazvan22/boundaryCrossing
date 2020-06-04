@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 import config
 import math
@@ -29,9 +30,12 @@ class PixelNorm(nn.Module):
     return x / ((x ** 2).mean(dim=1, keepdim=True) + eps).sqrt()
 
 class LinearEq(nn.Module):
-  def __init__(self, in_features, out_features, leakyParam, equalizeLr):
+  def __init__(self, in_features, out_features, leakyParam=0, equalizeLr=True, addDim=False):
     super().__init__()    
     self.module = nn.Linear(in_features, out_features)
+    self.in_features = in_features
+    self.out_features = out_features
+    self.addDim = addDim # add singleton dimension at the end, useful as linear activation
     size = self.module.weight.size()
     if equalizeLr:
       self.std = math.sqrt(2 / (np.prod(size[1:]) * (1 + leakyParam ** 2)))
@@ -43,7 +47,17 @@ class LinearEq(nn.Module):
 
 
   def forward(self, x):
-    return self.std * self.module(x)
+    if self.addDim:
+      x = x.view(*x.shape, 1)
+    #print('LinearEq in_features:', self.in_features)
+    #print('LinearEq out_features:', self.out_features)
+    #print('LinearEq in shape:', x.shape)
+    #print('LinearEq out shape:', (self.std * self.module(x)).shape)
+    out = self.std * self.module(x)
+    if self.addDim:
+      return out.view(*out.shape[:-1])
+    else:
+      return out
 
 class Conv2dEq(nn.Module):
   def __init__(self, in_channels, out_channels, kernel_size, stride, padding, leakyParam, equalizeLr):
@@ -84,7 +98,7 @@ class ConvTranspose2dEq(nn.Module):
 
   # like the standard convolution, but also adde ReLU layer and defaults to kernel size 3
 
-def conv(in_channels, out_channels, kernel_size=3, stride=1, padding=0, leaky=True, transpose=False, seq=False, batchNorm=False, layerNorm=False, layerNormRes=None, pixelNorm=False):
+def conv(in_channels, out_channels, kernel_size=3, stride=1, padding=0, activation='leaky', transpose=False, seq=False, batchNorm=False, layerNorm=False, layerNormRes=None, pixelNorm=False):
   # like the standard convolution, but also adde ReLU layer and defaults to kernel size 3
   if transpose:
     #convFunc = nn.ConvTranspose2d
@@ -115,25 +129,50 @@ def conv(in_channels, out_channels, kernel_size=3, stride=1, padding=0, leaky=Tr
     pixelObj = PixelNorm()
     layers += [pixelObj]    
 
-  if leaky:                 
+  if activation == 'leaky':
     layers += [nn.LeakyReLU(config.leakyParam, inplace=True)]
-  else:
+  elif activation == 'relu':
     layers += [nn.ReLU()]
-
+  elif activation == 'linear':
+    layers += [LinearEq(1, 1, leakyParam=0, equalizeLr=config.equalizeLr, addDim=True)]
+  elif activation == 'tanh':
+    layers += [nn.Tanh()]
+  else:
+    raise ValueError('activation can be either leaky, relu, linear or tanh')
+    
   if seq:
     return nn.Sequential(*layers)
   else:
     return layers
 
 
-class Downsample(nn.Module):
-    def __init__(self, size, mode):
-        super(Downsample, self).__init__()
-        self.size = size
-        self.mode = mode
+#class Downsample(nn.Module):
+#    def __init__(self, size, mode):
+#        super(Downsample, self).__init__()
+#        self.size = size
+#        self.mode = mode
+#        
+#    def forward(self, x):
+#        return nn.functional.interpolate(x, size=self.size, mode=self.mode, align_corners=False)
+
+class BatchStdDev(nn.Module):
+    def __init__(self):
+        super(BatchStdDev, self).__init__()
         
     def forward(self, x):
-        return nn.functional.interpolate(x, size=self.size, mode=self.mode, align_corners=False)
+      # x = BCHW
+      #print('x.shape', x.shape)
+      var = torch.var(x, dim=0) # variance over batches  512 x 4 x 4
+      #print('var.shape', var.shape)
+      varMean = torch.mean(x) # mean over channels and spatial locations - scalar
+      #print('varMean.shape', varMean.shape)
+      std = torch.sqrt(varMean + 1e-08) #
+      std = std.view(1,1,1,1) # 1 x 1 x 1 x 1
+      std = std.expand(x.shape[0],1,x.shape[2],x.shape[3]) # nrBatches x 1 x 4 x 4
+      #print('std shape', std.shape)
+      output = torch.cat([x, std], dim=1)
+      #print('output shape', output.shape)
+      return output
 
 
 class GeneratorBlock(nn.Module):
@@ -165,7 +204,7 @@ class GeneratorBlock(nn.Module):
   
     # need to create toImageLayer outside of the block, as at next growth lavel it will be discarded
     #self.block.add_module('debug', PrintLayer(msg='GenBlock2'))    
-    self.toImageLayer = self.toImage(inChannels=self.nc2)    
+    self.toImageLayer = self.toImage(inChannels=self.nc2)
 
     self.alpha = 0 # blending parameter, starts at 0 and ends at 1
 
@@ -193,9 +232,7 @@ class GeneratorBlock(nn.Module):
   
   def toImage(self, inChannels):
     # to RGB
-    layers = conv(inChannels, config.nc, kernel_size=1)
-    layers += [nn.Tanh()]
-    return nn.Sequential(*layers)
+    return conv(inChannels, config.nc, kernel_size=1, activation = config.activationFinal, seq = True)
   
 
 class DiscriminatorBlock(nn.Module):
@@ -286,9 +323,7 @@ class Generator(nn.Module):
 
   def toImage(self):
     # to RGB
-    layers = conv(self.nc2, config.nc, kernel_size=1)
-    layers += [nn.Tanh()]
-    return nn.Sequential(*layers)
+    return conv(self.nc2, config.nc, kernel_size=1, activation = config.activationFinal, seq = True)
     
   def grow_X_levels(self, extraLevels):
     for l in range(extraLevels):
@@ -327,7 +362,7 @@ class Generator(nn.Module):
   def updateAlpha(self, alpha):
     if self.newBlock is not None:
       self.newBlock.alpha = alpha
-      print('updated blending parameter:', alpha)
+      print('updated blending parameter: %.2f' % alpha)
   
   def stopBlending(self):
     if self.newBlock is not None:
@@ -395,20 +430,35 @@ class Discriminator(nn.Module):
   def lastBlock(self):
     # conv 3x3, padding=1
     block = nn.Sequential()
+
+    
+    block.add_module('batchStdDev',BatchStdDev())
+
     #block.add_module('debug', PrintLayer(msg='DiscLastBlock0'))
-    block.add_module('conv1-3x3',conv(self.nc1, self.nc1, padding=1, seq=True, batchNorm=config.batchNormG, layerNorm=config.layerNormG, layerNormRes=self.resX, pixelNorm=config.pixelNormG))
+    block.add_module('conv1-3x3',conv(self.nc1+1, self.nc1, padding=1, seq=True, batchNorm=config.batchNormG, layerNorm=config.layerNormG, layerNormRes=self.resX, pixelNorm=config.pixelNormG))
       
     # conv 4x4
     #block.add_module('debug', PrintLayer(msg='DiscLastBlock1'))
-    block.add_module('conv2-4x4',conv(self.nc2, self.nc2, kernel_size=4, seq=True, batchNorm=config.batchNormG, layerNorm=config.layerNormG, layerNormRes=1, pixelNorm=config.pixelNormG))
+    block.add_module('conv2-4x4',conv(self.nc2, self.nc2, kernel_size=4, stride=1, padding=0, seq=True, batchNorm=config.batchNormG, layerNorm=config.layerNormG, layerNormRes=1, pixelNorm=config.pixelNormG))
       
     # fully-connected layer
-
-    #block.add_module('debug', PrintLayer(msg='DiscLastBlock1'))
     block.add_module('flatten', nn.Flatten())
-    block.add_module('linear', LinearEq(in_features=self.nc2, out_features=1, leakyParam=0, equalizeLr=config.equalizeLr)
+    block.add_module('fully-connected', LinearEq(in_features=self.nc2, out_features=config.nc, leakyParam=0, equalizeLr=config.equalizeLr))
+
+    # add activation  
+    if config.activationFinal == 'linear':  
+      block.add_module('linear-activation', LinearEq(in_features=config.nc, out_features=config.nc, leakyParam=0, equalizeLr=config.equalizeLr)
 )
-    block.add_module('sigmoid', nn.Sigmoid())
+    elif config.activationFinal == 'tanh':
+      block.add_module('tanh', nn.Tanh())
+    elif config.activationFinal == 'leaky':
+      block.add_module('tanh', nn.LeakyReLU(0.2))
+    elif config.activationFinal == 'relu':
+      block.add_module('tanh', nn.ReLU(True))
+    else:
+      raise ValueError('activation can be either leaky, relu, linear or tanh')
+    
+    #block.add_module('sigmoid', nn.Sigmoid())
 
     #layers += [
     #  nn.Flatten(),

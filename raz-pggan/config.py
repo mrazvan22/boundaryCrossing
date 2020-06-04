@@ -8,24 +8,26 @@ posResY = posResX
 #nrLevels = len(posResX)
 nrLevels = 5
 
-startResLevel = 0 # starting resolution level
+startResLevel = 1 # starting resolution level
 
 #debug = True
 debug = False
 
 #Batch size during training
-batchSize = [64,64,64,64,64,64,64,16,4]
+#batchSize = [64,64,64,64,64,64,64,16,4]
+batchSize = [16,16,16,16,16,16,14,6,3]
 
 # Number of workers for dataloader, for each growth level
 workers = [10,10,10,0,0,0,0,0,0]
 
 # for running tests on a subset of the data (max = 369,000)
-#nrImgsToLoad = 40000
-nrImgsToLoad = 369000
+nrImgsToLoad = 40000
+#nrImgsToLoad = 369000
 
+#loadBatchesFromFile = False
 loadBatchesFromFile = True
 
-batchFiles = ['generated/batches/r%d_%d.pt' % (r, nrImgsToLoad) for r in posResX]
+batchFiles = ['generated/batches/r%d_b%d_i%d.pt' % (posResX[r], batchSize[r], nrImgsToLoad) for r in range(len(posResX))]
 
 keepBatchesInMemory = [True, True, True, True, True, True, True, True, True]
 
@@ -43,25 +45,26 @@ ndc = [512,512,512,512,512,256,128,64,32]
 #assert nrLevels == len(ndc)
 
 # Number of training epochs
-numEpochs = [10,10,10,10,10,10,10,10,10]
+numEpochs = [2,2,2,2,2,2,2,2,2]
 
 # Learning rate for optimizers
-lr_G = 0.001
+lr_G = 0.001 # 0.003 is too high
 lr_D = 0.001
 
 leakyParam = 0.2
 
 # Beta1 hyperparam for Adam optimizers
-beta1 = 0.9
+beta1 = 0.0
 
 # Number of GPUs available. Use 0 for CPU mode.
 ngpu = 1 # use 1 GPU for small batch sizes, e.g. < 256
+gpus = ['cuda%d' % i for i in range(ngpu) ]
 
-lambdaGrad = 0.1
+lambdaGrad = 0.2 # this is relative to the D(x) and D(G(z)) which are both between 0 and 1 
 
-n_critic = 5
+n_critic = 1
 
-outFolder = ['generated/lev%d_l%s_lr%s_ngc%d_ndc%d_lD%d_b%d_beta%d_i%d' % (l, lambdaGrad, lr_G, ngc[l], ndc[l], latDim, batchSize[l], beta1, nrImgsToLoad) for l in range(nrLevels)]
+outFolder = ['generated/lev%d_l%s_lr%s_ngc%d_ndc%d_lD%d_b%d_beta%d_nc%d_i%d' % (l, lambdaGrad, lr_G, ngc[l], ndc[l], latDim, batchSize[l], beta1, n_critic, nrImgsToLoad) for l in range(nrLevels)]
 
 
 # model save path
@@ -70,12 +73,12 @@ modelSavePaths = ['%s/lev%d-model-%dx%d_b%d.pt' % (outFolder[l], l, posResX[l], 
 batchNormG = False
 batchNormD = False
 
-layerNormD = False
+layerNormD = True
 layerNormG = True
 
-pixelNormD = True # generator only
-pixelNormG = False # generator only
+pixelNormD = False
+pixelNormG = False
 
 equalizeLr = True
 
-
+activationFinal = 'linear' # 'linear', 'tanh', 'leaky' or 'relu' 
