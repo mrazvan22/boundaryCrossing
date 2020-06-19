@@ -9,20 +9,21 @@ nrLevels = len(posResX)
 #nrLevels = len(po)
 
 # 0 - 4x4     3 - 32 x 32      5 - 128 x 128     7 - 512 x 512 
-startResLevel = 0 # starting resolution level
+startResLevel = 4 # starting resolution level
 
 #debug = True
 debug = False
 
 # experiments ran on GPUS with 12GB memory
 # choose a preset (number of gpus, batchSizes)
-#ngpu = 1; batchSize = [16,16,16,16,16,16,16,16,16]
-ngpu = 1; batchSize = [128,128,128,64,32,16,8,4,4]
+ngpu = 1; batchSize = [16,16,16,16,16,16,16,16,16]
+#ngpu = 1; batchSize = [128,128,128,64,32,16,8,4,4]
 #ngpu = 8; batchSize = [512,256,128,64,32,32,32,32,32]
 
 
 # Number of workers for dataloader, for each growth level
-workers = [10,10,10,10,10,10,10,10,10]
+#workers = [10,10,10,10,10,10,10,10,10]
+workers = [1,1,1,1,1,1,1,1,1]
 
 # for running tests on a subset of the data (max = 369,000)
 #nrImgsToLoad = 40000

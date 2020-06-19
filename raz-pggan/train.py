@@ -553,16 +553,7 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
               img_list.append(vutils.make_grid(fake, padding=2, normalize=True, nrow=nrows))
               #print(img_list)
     
-            fig = pl.figure(figsize=(8,8))
-            pl.clf()
-            pl.title("Fake Images")
-            pl.imshow(np.transpose(img_list[-1],(1,2,0)))
-            #fig.show()
-            fig.subplots_adjust(left=0,right=1,bottom=0,top=1)
-            ax = pl.gca()
-            fig.savefig('%s/l%d-fake-e%02d-i%06d.png' % (config.outFolder[l], l, epoch, i))
-            pl.close()
- 
+            plotFake(img_list, l, epoch, i)
             saveModel(netG, netD, G_losses, D_losses, img_list)
             saveLosses(G_losses, D_losses, gradPenaltyI, gradNormAvgI)
 
@@ -598,17 +589,17 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
   #real_batch = dataBatches[0]
   plotImages(dataBatches, nrImgToShow, nrows, img_list)
 
-def plotFake():
+def plotFake(img_list, l, epoch, i):
   fig = pl.figure(figsize=(8,8))
-            pl.clf()
-            pl.title("Fake Images")
-            pl.imshow(np.transpose(img_list[-1],(1,2,0)))
-            #fig.show()
-            fig.subplots_adjust(left=0,right=1,bottom=0,top=1)
-            ax = pl.gca()
-            fig.savefig('%s/l%d-fake-e%02d-i%06d.png' % (config.outFolder[l], l, epoch, i))
-            pl.close()
- 
+  pl.clf()
+  pl.title("Fake Images")
+  pl.imshow(np.transpose(img_list[-1],(1,2,0)))
+  #fig.show()
+  fig.subplots_adjust(left=0,right=1,bottom=0,top=1)
+  ax = pl.gca()
+  fig.savefig('%s/l%d-fake-e%02d-i%06d.png' % (config.outFolder[l], l, epoch, i))
+  pl.close()
+
 
 
 def plotImages(dataBatches, nrImgToShow, nrows, img_list):
