@@ -4,6 +4,7 @@ import config
 import math
 import numpy as np
 from torchsummary import summary
+import customFunctions
 
 class MyDataParallel(nn.DataParallel): # allows parameter fall-though
     def __getattr__(self, name):
@@ -195,15 +196,12 @@ class GeneratorBlock(nn.Module):
     self.block.add_module('upsample%d' % self.gl, nn.Upsample(size=newRes))
 
     # Conv 3x3
-    #self.block.add_module('debug', PrintLayer(msg='GenBlock0'))    
     self.block.add_module('conv%d_1' % self.gl, conv(self.nc1, self.nc2, padding=1, seq=True, batchNorm=config.batchNormG, layerNorm=config.layerNormG, layerNormRes=self.resX, pixelNorm=config.pixelNormG))    
 
     # Conv 3x3
-    #self.block.add_module('debug', PrintLayer(msg='GenBlock1'))    
     self.block.add_module('conv%d_2' % self.gl, conv(self.nc2, self.nc2, padding=1, seq=True, batchNorm=config.batchNormG, layerNorm=config.layerNormG, layerNormRes=self.resX, pixelNorm=config.pixelNormG))    
   
     # need to create toImageLayer outside of the block, as at next growth lavel it will be discarded
-    #self.block.add_module('debug', PrintLayer(msg='GenBlock2'))    
     self.toImageLayer = self.toImage(inChannels=self.nc2)
 
     self.alpha = 0 # blending parameter, starts at 0 and ends at 1
@@ -254,20 +252,16 @@ class DiscriminatorBlock(nn.Module):
     self.block = nn.Sequential()
     
     # Conv 3x3
-    #self.block.add_module('debug', PrintLayer(msg='DiscBlock0'))    
     self.block.add_module('conv%d_1' % self.gl, conv(self.nc1, self.nc1, padding=1, seq=True, batchNorm=config.batchNormD, layerNorm=config.layerNormD, layerNormRes=self.resX, pixelNorm=config.pixelNormD))    
 
     # Conv 3x3
-    #self.block.add_module('debug', PrintLayer(msg='DiscBlock1'))    
     self.block.add_module('conv%d_2' % self.gl, conv(self.nc1, self.nc2, padding=1, seq=True, batchNorm=config.batchNormD, layerNorm=config.layerNormD, layerNormRes=self.resX, pixelNorm=config.pixelNormD))    
 
     # downsample
-    #self.block.add_module('debug', PrintLayer(msg='DiscBlock2'))    
     self.block.add_module('downsample%d' % self.gl, nn.AvgPool2d(kernel_size=2))
 
     self.noChangeBlock = nn.Sequential()
     self.noChangeBlock.add_module('downsample%d' % self.gl, nn.AvgPool2d(kernel_size=2))
-    #self.noChangeBlock.add_module('fromImage', self.fromImage(outChannels=self.nc2))
 
     # allocate old fromImage layer since that already converged to good solution
     self.noChangeBlock.add_module('fromImage', fromImageLayerOld)
@@ -290,9 +284,8 @@ class DiscriminatorBlock(nn.Module):
 
  
 class Generator(nn.Module):
-  def __init__(self, ngpu):
+  def __init__(self):
     super(Generator, self).__init__()
-    self.ngpu = config.ngpu
     self.gl = 0 # current growth level, add +1 whenever you grow in resolution
     self.nc1 = config.ngc[self.gl] # nr channels before first conv in block (upsample)
     self.nc2 = config.ngc[self.gl] # nr channels after first conv in block (conv1 + conv2)
@@ -309,6 +302,13 @@ class Generator(nn.Module):
 
     # reference to latest added block, for updating it's blending parameter
     self.newBlock = None 
+
+    self.device = "cpu"
+
+    
+  def set(self, device):
+    self.device = device
+    self.to(device)
 
   def firstBlock(self):
     #input latent vector ngc x 1 x 1
@@ -341,7 +341,7 @@ class Generator(nn.Module):
 
     # extract the toImage layer from the network to pass it to the new GeneratorBlock below
     toImageLayerOld = self.net[-1][1]
-    self.net[-1] = self.net[-1][0]
+    self.net[-1] = self.net[-1][0] # remove toImage layer
 
     #print('self.net.named_children',list(self.net.named_children()))
     #for name, module in self.net.named_children():
@@ -357,6 +357,7 @@ class Generator(nn.Module):
     #newNet.add_module('toImage', self.toImage())
 
     #self.net = newNet
+    self.to(self.device)
 
 
   def updateAlpha(self, alpha):
@@ -375,11 +376,10 @@ class Generator(nn.Module):
       print('netG', self.net)
       self.newBlock = None
 
-  def forward(self, input):
+  def forward(self, x):
     if config.debug:
-      assert input.shape[1] == config.latDim
+      assert x.shape[1] == config.latDim
       
-      x = input
       print(x.size()) 
       for layer in self.net:
         x = layer(x)
@@ -393,15 +393,94 @@ class Generator(nn.Module):
 
       return output
     else:
-      return self.net(input)
+      return self.net(x)
 
+   
 
+class ModelParallel(nn.Module):
+  def __init__(self, net, split_size, gpus):
+    super(ModelParallel, self).__init__()
+    self.net = net # currently on cpu
+    self.split_size = split_size # size of micro-batch 
+    self.gpus = gpus
+    self.create() # create gpu modules and rest of object
+
+  def create(self): # needs to be called whenever we grow/modify self.net  
+    self.subnet = self.net.net
+    self.modules = list(self.subnet.named_children())
+    self.names = [x[0] for x in self.modules]
+    self.modules = [x[1] for x in self.modules]
+    self.ngpus = len(self.gpus)
+    
+    # allocate modules to gpu according to the number of parameters in each module
+    paramsPerModule = [sum(p.numel() for p in m.parameters() if p.requires_grad) for m in self.modules]
+    print('paramsPerModule', paramsPerModule)
+    print('ngpus', self.ngpus)
+    paramsPartitioned = customFunctions.partition_list(paramsPerModule, self.ngpus)
+    print('paramsPartitioned', paramsPartitioned)
+    nrModulesPerGpu = [len(x) for x in paramsPartitioned]
+    c = 0
+    self.gpuModules = [[] for g in range(self.ngpus)]
+    for g in range(self.ngpus):
+      for m in range(nrModulesPerGpu[g]):
+        self.gpuModules[g] += [self.modules[c]]
+        c += 1
+
+    print('gpuModules', self.gpuModules)
+
+    # create containers from lists and move to different gpus
+    for m in range(len(self.gpuModules)):
+      self.modules[m] = nn.Sequential(*self.gpuModules[m]).to(self.gpus[m])
+  
+
+  def forward(self, x):
+
+    if self.ngpus == 1:
+      return self.modules[0](x)
+    elif self.ngpus == 2:
+
+      splits = iter(x.split(self.split_size, dim=0))
+      s_next = next(splits) # dimension split_size x C x W x H
+      
+
+      s_prev = self.modules[0](s_next).to(self.gpus[1])
+      ret = []
+
+      for s_next in splits:
+          # A. s_prev runs on cuda:1
+          s_prev = self.modules[1](s_prev)
+          ret.append(s_prev)
+
+          # B. s_next runs on cuda:0, which can run concurrently with A
+          s_prev = self.modules[0](s_next).to(self.gpus[1])
+
+      s_prev = self.modules[1](s_prev)
+      ret.append(s_prev)
+
+      return torch.cat(ret)
+
+  #def __getattr__(self, name):
+  #    if hasattr(self.net, name):
+  #      #  return self.net.name
+  #      return getattr(self.net, name)
+      #except AttributeError:
+      #else:  
+      #  return self.__dict__.get(name)
+
+  def updateAlpha(self, *args, **kwargs): return self.net.updateAlpha(*args, **kwargs)
+  def stopBlending(self, *args, **kwargs): return self.net.stopBlending(*args, **kwargs)
+  
+  def grow_network(self, *args, **kwargs): 
+    self.net.grow_network(*args, **kwargs)
+    self.create() # re-create the object, as gpu allocations might be different now
+    
+
+        
 # torch.nn.Conv2d(in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True, padding_mode='zeros')
 
 class Discriminator(nn.Module):
-  def __init__(self, ngpu):
+  def __init__(self):
     super(Discriminator, self).__init__()
-    self.ngpu = config.ngpu
     self.gl = 0 # current growth level, add +1 whenever you grow in resolution
     #self.nc1 = config.ndc[config.nrLevels - self.gl - 2] # nr channels before second conv in block
     #self.nc2 = config.ndc[config.nrLevels - self.gl - 1] # nr channels after second conv in block
@@ -422,6 +501,11 @@ class Discriminator(nn.Module):
     # reference to latest added block, for updating it's blending parameter
     self.newBlock = None
     
+    self.device = "cpu" # by default it is built on cpu
+    
+  def set(self, device):
+    self.device = device
+    self.to(device)
 
   def fromImage(self): # like fromRGB but for 1 channel
     # conv 1x1
@@ -431,14 +515,11 @@ class Discriminator(nn.Module):
     # conv 3x3, padding=1
     block = nn.Sequential()
 
-    
     block.add_module('batchStdDev',BatchStdDev())
 
-    #block.add_module('debug', PrintLayer(msg='DiscLastBlock0'))
     block.add_module('conv1-3x3',conv(self.nc1+1, self.nc1, padding=1, seq=True, batchNorm=config.batchNormG, layerNorm=config.layerNormG, layerNormRes=self.resX, pixelNorm=config.pixelNormG))
       
     # conv 4x4
-    #block.add_module('debug', PrintLayer(msg='DiscLastBlock1'))
     block.add_module('conv2-4x4',conv(self.nc2, self.nc2, kernel_size=4, stride=1, padding=0, seq=True, batchNorm=config.batchNormG, layerNorm=config.layerNormG, layerNormRes=1, pixelNorm=config.pixelNormG))
       
     # fully-connected layer
@@ -497,12 +578,14 @@ class Discriminator(nn.Module):
     newNet.add_module('block%d' % self.gl, self.newBlock)
 
 
-    print('self.net.named_children',list(self.net.named_children()))
+    #print('self.net.named_children',list(self.net.named_children()))
     for name, module in self.net.named_children():
       newNet.add_module(name, module) # make new structure
       newNet[-1].load_state_dict(module.state_dict())
 
     self.net = newNet
+
+    self.to(self.device)
 
 
   def updateAlpha(self, alpha):
@@ -551,202 +634,4 @@ class Discriminator(nn.Module):
       return x
     else:
       return self.net(input)
-
-
-###########################################################
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# torch.nn.Conv2d(in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True, padding_mode='zeros')
-class GeneratorDCGAN3(nn.Module):
-    def __init__(self, ngpu):
-        super(GeneratorDCGAN3, self).__init__()
-        self.ngpu = ngpu
-        self.main = nn.Sequential(
-            # input is Z, going into a convolution
-            nn.ConvTranspose2d( config.latDim, config.ngf * 2, kernel_size=4, stride=1, padding=0, bias=False),
-            nn.BatchNorm2d(config.ngf * 2),
-            nn.ReLU(True),
-            # state size. (config.ngf*8) x 4 x 4
-            nn.ConvTranspose2d(config.ngf * 2, config.ngf, kernel_size=4, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(config.ngf),
-            nn.ReLU(True),
-            # state size. (config.ngf*4) x 8 x 8
-            nn.ConvTranspose2d( config.ngf, config.nc, kernel_size=4, stride=2, padding=1, bias=False),
-            nn.Tanh()
-
-            #nn.BatchNorm2d(config.ngf * 2),
-            #nn.ReLU(True),
-            # state size. (config.ngf*2) x 16 x 16
-            #nn.ConvTranspose2d( config.ngf * 2, config.ngf, 4, 2, 1, bias=False),
-            #nn.BatchNorm2d(config.ngf),
-            #nn.ReLU(True),
-            # state size. (config.ngf) x 32 x 32
-            #nn.ConvTranspose2d( config.ngf, config.nc, 4, 2, 1, bias=False),
-            #nn.Tanh()
-            # state size. (nc) x 64 x 64
-        )
-
-    def forward(self, input):
-        return self.main(input)
-
-# don't apply batchnorm to Disc input layer and Gen output layer, otherwise sample oscillation can occur
-class DiscriminatorDCGAN3(nn.Module):
-    def __init__(self, ngpu):
-        super(DiscriminatorDCGAN3, self).__init__()
-        self.ngpu = ngpu
-        self.main = nn.Sequential(
-            # input is (nc) x 64 x 64
-            #nn.Conv2d(config.nc, config.ndf, 4, 2, 1, bias=False),
-            #nn.LeakyReLU(0.2, inplace=True),
-            # state size. (config.ndf) x 32 x 32
-            #nn.Conv2d(config.ndf, config.ndf * 2, 4, 2, 1, bias=False),
-            #nn.BatchNorm2d(config.ndf * 2),
-            #nn.LeakyReLU(0.2, inplace=True),
-            
-            
-            # state size. (config.ndf*2) x 16 x 16
-            nn.Conv2d(config.nc, config.ndf, kernel_size=4, stride=2, padding=1, bias=False),
-            #nn.BatchNorm2d(config.ndf),
-            nn.LeakyReLU(0.2, inplace=True),
-            # state size. (config.ndf) x 4 x 4
-            nn.Conv2d(config.ndf, config.ndf * 2, kernel_size=4, stride=2, padding=1, bias=False),
-            nn.LayerNorm(normalized_shape=(config.ndf * 2,4,4)),
-            #nn.BatchNorm2d(config.ndf * 2),
-            nn.LeakyReLU(0.2, inplace=True),
-            # state size. (config.ndf*2) x 4 x 4
-            nn.Conv2d(config.ndf * 2, 1, 4, 1, 0, bias=False),
-            nn.Sigmoid()
-        )
-
-    def forward(self, input):
-        return self.main(input)
-
-
-
-
-class GeneratorDCGAN2(nn.Module):
-    def __init__(self, ngpu):
-        super(GeneratorDCGAN2, self).__init__()
-        self.ngpu = ngpu
-        self.main = nn.Sequential(
-            # input is Z, going into a convolution
-            nn.ConvTranspose2d( config.latDim, config.ngf * 8, 4, 1, 0, bias=False),
-            nn.BatchNorm2d(config.ngf * 8),
-            nn.ReLU(True),
-            # state size. (config.ngf*8) x 4 x 4
-            nn.ConvTranspose2d(config.ngf * 8, config.ngf * 4, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(config.ngf * 4),
-            nn.ReLU(True),
-            # state size. (config.ngf*4) x 8 x 8
-            nn.ConvTranspose2d( config.ngf * 4, config.ngf * 2, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(config.ngf * 2),
-            nn.ReLU(True),
-            # state size. (config.ngf*2) x 16 x 16
-            nn.ConvTranspose2d( config.ngf * 2, config.ngf, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(config.ngf),
-            nn.ReLU(True),
-            # state size. (config.ngf) x 32 x 32
-            nn.ConvTranspose2d( config.ngf, config.nc, 4, 2, 1, bias=False),
-            nn.Tanh()
-            # state size. (nc) x 64 x 64
-        )
-
-    def forward(self, input):
-        return self.main(input)
-
-
-class DiscriminatorDCGAN2(nn.Module):
-    def __init__(self, ngpu):
-        super(DiscriminatorDCGAN2, self).__init__()
-        self.ngpu = ngpu
-        self.main = nn.Sequential(
-            # input is (nc) x 64 x 64
-            nn.Conv2d(config.nc, config.ndf, 4, 2, 1, bias=False),
-            nn.LeakyReLU(0.2, inplace=True),
-            # state size. (config.ndf) x 32 x 32
-            nn.Conv2d(config.ndf, config.ndf * 2, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(config.ndf * 2),
-            nn.LeakyReLU(0.2, inplace=True),
-            # state size. (config.ndf*2) x 16 x 16
-            nn.Conv2d(config.ndf * 2, config.ndf * 4, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(config.ndf * 4),
-            nn.LeakyReLU(0.2, inplace=True),
-            # state size. (config.ndf*4) x 8 x 8
-            nn.Conv2d(config.ndf * 4, config.ndf * 8, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(config.ndf * 8),
-            nn.LeakyReLU(0.2, inplace=True),
-            # state size. (config.ndf*8) x 4 x 4
-            nn.Conv2d(config.ndf * 8, 1, 4, 1, 0, bias=False),
-            nn.Sigmoid()
-        )
-
-    def forward(self, input):
-        return self.main(input)
-
-
-# torch.nn.Conv2d(in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True, padding_mode='zeros')
-class GeneratorDCGAN(nn.Module):
-    def __init__(self, ngpu):
-        super(GeneratorDCGAN, self).__init__()
-        self.ngpu = ngpu
-        self.main = nn.Sequential(
-            # input is Z, going into a convolution
-            nn.ConvTranspose2d( config.latDim, config.ngc[0], kernel_size=4, stride=1, padding=0, bias=False),
-            nn.BatchNorm2d(config.ngc[0]),
-            nn.ReLU(True),
-            # state size. (config.ngf*8) x 4 x 4
-            #nn.ConvTranspose2d(config.ngf * 8, config.ngf * 4, 4, 2, 1, bias=False),
-            #nn.BatchNorm2d(config.ngf * 4),
-            #nn.ReLU(True),
-            
-            # state size. (config.ngf) x 8 x 8
-            nn.ConvTranspose2d( config.ngc[0], config.nc, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.Tanh()
-            # state size. (nc) x 64 x 64
-        )
-
-    def forward(self, input):
-        return self.main(input)
-
-
-class DiscriminatorDCGAN(nn.Module):
-    def __init__(self, ngpu):
-        super(DiscriminatorDCGAN, self).__init__()
-        self.ngpu = ngpu
-        self.main = nn.Sequential(
-            # input is (nc) x 4 x 4
-            nn.Conv2d(config.nc, config.ndc[-1], kernel_size=4, stride=1, padding=0, bias=False),
-            nn.BatchNorm2d(config.ndc[-1]),
-            nn.LeakyReLU(0.2, inplace=True),
-            # state size. (config.ndf*4) x 8 x 8
-            #nn.Conv2d(config.ndf * 4, config.ndf * 8, 4, 2, 1, bias=False),
-            #nn.BatchNorm2d(config.ndf * 8),
-            #nn.LeakyReLU(0.2, inplace=True),
-            # state size. (config.ndf*8) x 4 x 4
-            nn.Conv2d(config.ndc[-1], config.nc, kernel_size=1, stride=1, padding=0, bias=False),
-            nn.Sigmoid()
-        )
-
-    def forward(self, input):
-        return self.main(input)
-
 

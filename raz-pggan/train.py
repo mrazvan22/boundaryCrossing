@@ -42,14 +42,51 @@ random.seed(manualSeed)
 torch.manual_seed(manualSeed)
 sys.stdout.flush()
 
+def allocGpus(gpus):
+  '''returns 2 lists (gpusG, gpusD) denoting the available gpus for Generator and Discriminator. Generally allocates more gpus to discriminator '''
+  allocs = [
+    (), 
+    ([0],[0]), 
+    ([0],[1]), 
+    ([0],[1,2]), 
+    ([0,1],[2,3]), 
+    ([0,1],[2,3,4]),
+    ([0,1,2],[3,4,5]),
+    ([0,1,2],[3,4,5,6]),
+    ([0,1,2,3],[4,5,6,7]),
+    ([0,1,2,3],[4,5,6,7,8]), # 9 gpus
+]
+  ngpu = len(gpus)
+  if ngpu > 0:
+    if config.parallelMode == 'model-parallel':
+      gpusG = [gpus[i] for i in allocs[ngpu][0]]
+      gpusD = [gpus[i] for i in allocs[ngpu][1]]
+      return gpusG, gpusD
+    else:
+      gpusG = [gpus[0]]
+      gpusD = [gpus[0]]
+      return gpusG, gpusD
+  else:
+    return ["cpu"], ["cpu"]
+
+
 # Decide which device we want to run on
-device = torch.device("cuda:0" if (torch.cuda.is_available() and config.ngpu > 0) else "cpu")
-parallelCuda = (device.type == 'cuda') and (config.ngpu > 1)
+#device = torch.device(config.gpus[0] if (torch.cuda.is_available() and config.ngpu > 0) else "cpu")
+device = config.gpus[0] if (torch.cuda.is_available() and config.ngpu > 0) else "cpu"
+
+# allocate different gpus for Generator and Discriminator
+gpusG, gpusD = allocGpus(config.gpus)
+print('gpusG', gpusG)
+print('gpusD', gpusD)
+
+#dataParallel = (device.type == 'cuda') and (config.ngpu > 1) 
+#dataParallel = (config.parallelMode) and (config.ngpu > 1)
 print('device ', device)
 print('curr_device', torch.cuda.current_device())
 print('# devices=', torch.cuda.device_count())
 print(torch.cuda.get_device_name(0))
 print('is_available', torch.cuda.is_available())
+
 
 # custom weights initialization called on netG and netD
 def weights_init(m):
@@ -87,39 +124,28 @@ def initModels():
   criterion = nn.BCELoss()
 
   if config.startResLevel == 0: # if starting from scratch, then create the gen/discrim, else load from prev checkpoint
-    # Create the generator
-    #netG = network.Generator(config.ngpu).to(device)
-    netG = network.Generator(config.ngpu).to(device)
+    # Create the generator and discriminator
+    netG = network.Generator()
+    netD = network.Discriminator()
+
+    if config.parallelMode == 'gpu-single':
+      netG.set(device)
+      netD.set(device)
+    if config.parallelMode == 'data-parallel':
+      netG.set(device)
+      netD.set(device)
   
-
-    # Handle multi-gpu if desired
-    if parallelCuda:
       netG = network.MyDataParallel(netG, list(range(config.ngpu))) # allows fall-though of custom attributes
-
-    # Apply the weights_init fuconfig.nction to randomly initialize all weights
-    #  to mean=0, stdev=0.2.
-    #netG.apply(weights_init)
+      netD = network.MyDataParallel(netD, list(range(config.ngpu)))
+    elif config.parallelMode == 'model-parallel':
+      netG = network.ModelParallel(netG, config.split_size, gpusG)
+      netD = network.ModelParallel(netD, config.split_size, gpusD)
+      
 
     # Print the model
     print(netG)
     netG_params = sum(p.numel() for p in netG.parameters() if p.requires_grad)
     print('netG_params', netG_params)
-
-
-
-    # Create the Discriminator
-    #netD = network.Discriminator(config.ngpu).to(device)
-    netD = network.Discriminator(config.ngpu).to(device)
-
-    # Handle multi-gpu if desired
-    if parallelCuda:
-      netD = network.MyDataParallel(netD, list(range(config.ngpu)))
-
-    # Apply the weights_init fuconfig.nction to randomly initialize all weights
-    #  to mean=0, stdev=0.2.
-    #netD.apply(weights_init)
-
-    # Print the model
     print(netD)
     netD_params = sum(p.numel() for p in netD.parameters() if p.requires_grad)
     print('netD_params', netD_params)
@@ -134,8 +160,8 @@ def initModels():
     #}, config.modelSavePaths[i])
 
     # create initial 4x4 resolution network, level = 0
-    netG = network.Generator(config.ngpu) 
-    netD = network.Discriminator(config.ngpu)
+    netG = network.Generator() 
+    netD = network.Discriminator()
 
     # grow networks to resolution of previous checkpoint (8x8 - level 1, 16x16 - level 2, ...)
     netG.grow_X_levels(extraLevels=config.startResLevel-1)
@@ -153,12 +179,26 @@ def initModels():
     netG.eval() 
     netD.eval()
 
-    netG.to(device)
-    netD.to(device)
-    # Handle multi-gpu if desired
-    if parallelCuda:
-      netG = network.MyDataParallel(netG, list(range(config.ngpu)))
+    if config.parallelMode == 'gpu-single':
+      netG.set(device)
+      netD.set(device)
+    if config.parallelMode == 'data-parallel':
+      netG.set(device)
+      netD.set(device)
+  
+      netG = network.MyDataParallel(netG, list(range(config.ngpu))) # allows fall-though of custom attributes
       netD = network.MyDataParallel(netD, list(range(config.ngpu)))
+    elif config.parallelMode == 'model-parallel':
+      netG = network.ModelParallel(netG, config.split_size, gpusG)
+      netD = network.ModelParallel(netD, config.split_size, gpusD)
+
+
+    #netG.to(device)
+    #netD.to(device)
+    # Handle multi-gpu if desired
+    #if dataParallel:
+    #  netG = network.MyDataParallel(netG, list(range(config.ngpu)))
+    #  netD = network.MyDataParallel(netD, list(range(config.ngpu)))
 
     #netG = checkpoint['netG']
     #netD = checkpoint['netD']
@@ -184,7 +224,7 @@ def loadBatches(l):
   #  cvtransforms.ToTensor(),
   #])
 
-  if not config.loadBatchesFromFile:
+  if config.loadBatchesMode == 'fileSave':
 
     dataset = DataLoaderOptimised.PngDataset(config.train_images_list, transformPIL)
     
@@ -207,12 +247,22 @@ def loadBatches(l):
     print('time for loading data', time.time() - start)
 
     torch.save({'dataBatches':dataBatches}, config.batchFiles[l])
-  else:  
+  if config.loadBatchesMode == 'fileLoad':
  
     start = time.time()
     dataBatches = torch.load(config.batchFiles[l])['dataBatches']
     print('time to load images from torch file: %f' % (time.time() - start ))
     #asda
+  if config.loadBatchesMode == 'on-demand':
+    dataset = DataLoaderOptimised.PngDataset(config.train_images_list, transformPIL)
+    
+    # Create the DataLoaderOptimised
+    loader = torch.utils.data.DataLoader(dataset, batch_size=config.batchSize[l],
+      shuffle=True, num_workers=config.workers[l], pin_memory=True,
+      #collate_fn=mycollate
+      )
+
+    dataBatches = loader
 
   return dataBatches
 
@@ -221,7 +271,7 @@ def loadBatches(l):
 def calc_gradPenalty(netD, real_data, fake_data):
   batchSize = real_data.shape[0] 
   assert len(real_data.shape) == 4
-  epsB = torch.rand(batchSize, 1, 1, 1, device=device) # pytorch broadcasts last 3 dimensions
+  epsB = torch.rand(batchSize, 1, 1, 1, device=gpusD[0]) # pytorch broadcasts last 3 dimensions
   #epsB = eps.expand
   diff = real_data - fake_data
   interp = real_data + epsB * diff
@@ -260,16 +310,19 @@ def calc_gradPenalty(netD, real_data, fake_data):
 
 def oneLevel(netG, netD, criterion, dataBatches, l):
   if l != 0: # grow the network in resolution 
-    #if parallelCuda:
+    #if dataParallel:
     #  netG.module.grow_network()
     #  netD.module.grow_network()
     #else:
+    #print(len(netG.modules))
     netG.grow_network()
     netD.grow_network()
     
-    netG.to(device)
+    #if config.parallelMode == 'gpu-single':
+    #  netG.to(device)
+    #  netD.to(device)
+
     print(netG)
-    netD.to(device)
     print(netD)
 
 
@@ -277,8 +330,8 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
   doPlot = True
   if doPlot:
     # Plot some training images
-    #real_batch = next(iter(loader))
-    real_batch = dataBatches[0]
+    real_batch = next(iter(dataBatches))
+    #real_batch = dataBatches[0]
     #print('real_batch ', real_batch)
     #print('batch len', len(real_batch))
     #print(real_batch.shape)
@@ -287,7 +340,7 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
     pl.title("Training Images")
     #print(vutils.make_grid(real_batch.to(device), padding=2, normalize=True, nrow=8).cpu())
     #print(np.transpose(vutils.make_grid(real_batch.to(device), padding=2, normalize=True, nrow=8).cpu(),(1,2,0)))
-    pl.imshow(np.transpose(vutils.make_grid(real_batch.to(device), padding=2, normalize=True, nrow=4).cpu(),(1,2,0)))
+    pl.imshow(np.transpose(vutils.make_grid(real_batch, padding=2, normalize=True, nrow=4).cpu(),(1,2,0)))
     fig.subplots_adjust(left=0,right=1,bottom=0,top=1)
     #pl.show()
     fig.savefig('%s/sampleBatch.png' % config.outFolder[l])
@@ -296,7 +349,7 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
   #  the progression of the generator
   nrImgToShow = 9
   nrows = 3
-  fixed_noise = torch.randn(nrImgToShow, config.latDim, 1, 1, device=device)
+  fixed_noise = torch.randn(nrImgToShow, config.latDim, 1, 1, device=gpusG[0])
 
   # Establish convention for real and fake labels during training
   real_label = 1
@@ -317,7 +370,7 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
 
   iters = 0
 
-  one = torch.tensor(1, dtype=torch.float).cuda()
+  one = torch.tensor(1, dtype=torch.float).to(gpusD[-1])  # alloc on last gpu of D
   mone = one * -1
   
   nrBatches = len(dataBatches)
@@ -334,19 +387,22 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
       # For each batch in the DataLoaderOptimised
       #for i, data in enumerate(loader, 0):
       for i, data in enumerate(dataBatches,0):
-          batchesSoFar += 1
+        batchesSoFar += 1
+        
+        if batchesSoFar % nrBatchesToAddAlpha == 0:
+          # multiply by 2, as we want newAlpha to be 1 at 50% progress
+          newAlpha = 2 * (batchesSoFar / totalBatches)
+          if newAlpha <= 1.0:
+            netG.updateAlpha(newAlpha)
+            netD.updateAlpha(newAlpha)
+          else:
+             # stop blending. future updates to alpha have no effect until increase in resolution
+            netG.stopBlending()
+            netD.stopBlending()
+       
+        for a in range(config.nrAccumGrads):
 
-          if batchesSoFar % nrBatchesToAddAlpha == 0:
-            # multiply by 2, as we want newAlpha to be 1 at 50% progress
-            newAlpha = 2 * (batchesSoFar / totalBatches)
-            if newAlpha <= 1.0:
-              netG.updateAlpha(newAlpha)
-              netD.updateAlpha(newAlpha)
-            else:
-               # stop blending. future updates to alpha have no effect until increase in resolution
-              netG.stopBlending()
-              netD.stopBlending()
-          
+         
           ############################
           # (1) Update D network: maximize log(D(x)) + log(1 - D(G(z)))
           ###########################
@@ -355,14 +411,16 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
           # Format batch
           #print('---------------------------------')
           #start = time.time()
-          real_cpu = data.to(device)
-          #print('data.to(device)', time.time() - start)
+          real_cpu = data.to(gpusD[0])
           #print('real_cpu.size', real_cpu.size())
         
           b_size = real_cpu.size(0)
          
           # Forward pass real batch through D
           #start = time.time()
+          #print(netD)
+          #print(real_cpu.get_device())
+          #ads
           D_real = netD(real_cpu)
           #print('netD(real)', time.time() - start)
           # Calculate loss on all-real batch errD_real = E_data(log(D(x)))
@@ -374,8 +432,12 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
           #print('mone', mone.shape)
           D_real_meani = D_real_mean.item()
           #start = time.time()
-          D_real_mean.backward(mone)
+          #D_real_mean.backward(mone)
           #print('D_real.backward()', time.time() - start)
+          
+          # add small loss to keep D from drifting too far away from zero
+          lossD = - D_real_mean + 0.001 * (D_real_mean ** 2)     
+          lossD.backward()
           
           #label = torch.full((b_size,), real_label, device=device)
           #errD_real = criterion(D_real, label)
@@ -384,10 +446,10 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
 
           ## Train with all-fake batch errD_fake = E_z [log(1 - D(G(z)))]
           # Generate batch of latent vectors
-          noise = torch.randn(b_size, config.latDim , 1, 1, device=device)
+          noise = torch.randn(b_size, config.latDim , 1, 1, device=gpusG[0])
           # Generate fake image batch with G
           #start = time.time()
-          fake = netG(noise)
+          fake = netG(noise).to(gpusD[0])
           #print('netG(noise)', time.time() - start)
           # Classify all fake batch with D
           D_fake = netD(fake.detach()).view(-1)
@@ -419,14 +481,7 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
           gradPenalty_i = gradPenalty.item()
           #gradPenalty_i = 0
 
-          # add small loss to keep D from drifting too far away from zero
-          lossDrift = 0.001 * (D_real_mean ** 2)     
-          lossDrift.backward()
-
-
           errD = - D_real_meani + D_fake_meani + gradPenalty_i
-
-          
           #errD = errD_real + errD_fake
         
           # Update D
@@ -441,13 +496,13 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
             netG.zero_grad()
 
             # Generate batch of latent vectors
-            noise = torch.randn(b_size, config.latDim , 1, 1, device=device)
+            noise = torch.randn(b_size, config.latDim , 1, 1, device=gpusG[0])
             # Generate fake image batch with G
             fake = netG(noise)
 
             #label.fill_(real_label)  # fake labels are real for generator cost
             # Siconfig.nce we just updated D, perform another forward pass of all-fake batch through D
-            D_fake_2 = netD(fake).view(-1)
+            D_fake_2 = netD(fake.to(gpusD[0])).view(-1)
             # Calculate G's loss based on this output
             #errG = criterion(D_fake_2, label)
             # Calculate gradients for G
@@ -466,6 +521,10 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
             # Update G
             optimizerG.step()
 
+          #if i == 20:
+          #  end = time.time()
+          #  print('time for last epoch', end - start)
+          #  asd
 
           # Output training stats
           if i % config.n_critic  == 0 and ( i < 20 or i % 100 == 0) :
@@ -504,19 +563,8 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
             fig.savefig('%s/l%d-fake-e%02d-i%06d.png' % (config.outFolder[l], l, epoch, i))
             pl.close()
  
-
-            fig = pl.figure(figsize=(10,5))
-            pl.title("Generator and Discriminator Loss During Training")
-            pl.plot(G_losses, label="G")
-            pl.plot(D_losses, label="D")
-            pl.plot(gradPenaltyI, label="grad penalty")
-            pl.plot(gradNormAvgI, label="grad norm")
-            pl.xlabel("iterations")
-            pl.ylabel("Loss")
-            pl.legend()
-            fig.savefig('%s/l%d-trainingLoss.png' % (config.outFolder[l], l))
-            pl.close()
-
+            saveModel(netG, netD, G_losses, D_losses, img_list)
+            saveLosses(G_losses, D_losses, gradPenaltyI, gradNormAvgI)
 
 
           iters += 1
@@ -525,36 +573,15 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
   print('time for last epoch', end - start)
   
 
-  if parallelCuda:
-    G_state = netG.module.state_dict()
-    D_state = netD.module.state_dict()
-  else:
-    G_state = netG.state_dict()
-    D_state = netD.state_dict()
+  #if dataParallel:
+  #  G_state = netG.module.state_dict()
+  #  D_state = netD.module.state_dict()
+  #else:
 
-
-  torch.save({
-    'G_state' : G_state,
-    'D_state' : D_state,
-    #'netG_' : netG,
-    #'netD' : netD,
-    'G_losses' : G_losses,
-    'D_losses': D_losses,
-    'img_list' : img_list,
-  }, config.modelSavePaths[l])
-
-  fig = pl.figure(figsize=(10,5))
-  pl.title("Generator and Discriminator Loss During Training")
-  pl.plot(G_losses, label="G")
-  pl.plot(D_losses, label="D")
-  pl.plot(gradPenaltyI, label="grad penalty")
-  pl.plot(gradNormAvgI, label="grad norm")
-  pl.xlabel("iterations")
-  pl.ylabel("Loss")
-  pl.legend()
-  fig.savefig('%s/l%d-trainingLoss.png' % (config.outFolder[l], l))
-  pl.close()
-
+  saveModel(netG, netD, G_losses, D_losses, img_list)
+ 
+  saveLosses(G_losses, D_losses, gradPenaltyI, gradNormAvgI)
+ 
   #%%capture
   fig = pl.figure(figsize=(8,8))
   pl.axis("off")
@@ -568,14 +595,31 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
   #HTML(ani.to_jshtml())
 
   # Grab a batch of real images from the DataLoaderOptimised
-  real_batch = dataBatches[0]
+  #real_batch = dataBatches[0]
+  plotImages(dataBatches, nrImgToShow, nrows, img_list)
+
+def plotFake():
+  fig = pl.figure(figsize=(8,8))
+            pl.clf()
+            pl.title("Fake Images")
+            pl.imshow(np.transpose(img_list[-1],(1,2,0)))
+            #fig.show()
+            fig.subplots_adjust(left=0,right=1,bottom=0,top=1)
+            ax = pl.gca()
+            fig.savefig('%s/l%d-fake-e%02d-i%06d.png' % (config.outFolder[l], l, epoch, i))
+            pl.close()
+ 
+
+
+def plotImages(dataBatches, nrImgToShow, nrows, img_list):
+  real_batch = next(iter(dataBatches))
 
   # Plot the real images
   fig = pl.figure(figsize=(15,7.5))
   pl.subplot(1,2,1)
   pl.axis("off")
   pl.title("Real Images")
-  pl.imshow(np.transpose(vutils.make_grid(real_batch.to(device)[:nrImgToShow], padding=2, normalize=True, nrow=nrows).cpu(),(1,2,0)))
+  pl.imshow(np.transpose(vutils.make_grid(real_batch[:nrImgToShow], padding=2, normalize=True, nrow=nrows).cpu(),(1,2,0)))
 
   # Plot the fake images from the last epoch
   pl.subplot(1,2,2)
@@ -588,6 +632,41 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
   fig.savefig('%s/l%d-fake.png' % (config.outFolder[l], l))
   pl.close()
  
+
+def saveLosses(G_losses, D_losses, gradPenaltyI, gradNormAvgI):
+  fig = pl.figure(figsize=(10,5))
+  pl.title("Generator and Discriminator Loss During Training")
+  pl.plot(G_losses, label="G")
+  pl.plot(D_losses, label="D")
+  pl.plot(gradPenaltyI, label="grad penalty")
+  pl.plot(gradNormAvgI, label="grad norm")
+  pl.xlabel("iterations")
+  pl.ylabel("Loss")
+  pl.legend()
+  fig.savefig('%s/l%d-trainingLoss.png' % (config.outFolder[l], l))
+  pl.close()
+
+
+
+
+def saveModel(netG, netD, G_losses, D_losses, img_list):
+  G_state = netG.state_dict()
+  D_state = netD.state_dict()
+
+
+  torch.save({
+    'G_state' : G_state,
+    'D_state' : D_state,
+    #'netG_' : netG,
+    #'netD' : netD,
+    'G_losses' : G_losses,
+    'D_losses': D_losses,
+    'img_list' : img_list,
+  }, config.modelSavePaths[l])
+
+  
+
+
 def rerunOneLevel(dataBatches, l=config.startResLevel):
   importlib.reload(config);
   importlib.reload(network);
