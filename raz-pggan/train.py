@@ -116,6 +116,16 @@ def scaleImages(images):
   images = (images - 127.5) / 127.5
   return images
 
+def renameStateKeys(state):
+
+  from collections import OrderedDict
+  new_state_dict = OrderedDict()
+  for k, v in state.items():
+    name = k[7:] # remove `module.`
+    new_state_dict[name] = v
+
+  return new_state_dict
+
 def initModels():
   
  
@@ -168,12 +178,20 @@ def initModels():
     netD.grow_X_levels(extraLevels=config.startResLevel-1)
 
     # load weights from previous checkpoint 
-    print('loading model from %s' % config.modelSavePaths[config.startResLevel - 1])
-    checkpoint = torch.load(config.modelSavePaths[config.startResLevel-1])
+    print('loading model from %s' % config.modelLoadPath)
+    #checkpoint = torch.load(config.modelSavePaths[config.startResLevel-1])
+    checkpoint = torch.load(config.modelLoadPath)
     print('G_state', checkpoint['G_state'].keys())
     print('D_state', checkpoint['D_state'].keys())
-    netG.load_state_dict(checkpoint['G_state'])
-    netD.load_state_dict(checkpoint['D_state'])
+    G_state = checkpoint['G_state']
+    D_state = checkpoint['D_state']
+    G_keys = list(G_state.keys())
+    if G_keys[0].startswith("module"):
+      G_state = renameStateKeys(G_state)
+      D_state = renameStateKeys(D_state)
+
+    netG.load_state_dict(G_state)
+    netD.load_state_dict(D_state)
 
     # set up correct weights for batchNorm and dropout
     netG.eval() 
@@ -264,7 +282,7 @@ def loadBatches(l):
 
     dataBatches = loader
 
-  return dataBatches
+  return iter(dataBatches)
 
 
 
@@ -284,7 +302,6 @@ def calc_gradPenalty(netD, real_data, fake_data):
   #interp.requires_grad_(True)
   #D_interp.requires_grad_(True)
   #print('netD weight', netD.main[0].weight)
-  #print('netD grad', netD.main[0].weight.grad)
   #print('interp', interp)
   #print('interp.grad', interp.grad)
   
@@ -330,17 +347,17 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
   doPlot = True
   if doPlot:
     # Plot some training images
-    real_batch = next(iter(dataBatches))
+    real_batch = next(dataBatches)
     #real_batch = dataBatches[0]
     #print('real_batch ', real_batch)
     #print('batch len', len(real_batch))
     #print(real_batch.shape)
-    fig = pl.figure(figsize=(12,12))
+    fig = pl.figure(figsize=(24,24))
     pl.axis("off")
     pl.title("Training Images")
     #print(vutils.make_grid(real_batch.to(device), padding=2, normalize=True, nrow=8).cpu())
     #print(np.transpose(vutils.make_grid(real_batch.to(device), padding=2, normalize=True, nrow=8).cpu(),(1,2,0)))
-    pl.imshow(np.transpose(vutils.make_grid(real_batch, padding=2, normalize=True, nrow=4).cpu(),(1,2,0)))
+    pl.imshow(np.transpose(vutils.make_grid(real_batch[:9,:,:,:], padding=2, normalize=True, nrow=3).cpu(),(1,2,0)))
     fig.subplots_adjust(left=0,right=1,bottom=0,top=1)
     #pl.show()
     fig.savefig('%s/sampleBatch.png' % config.outFolder[l])
@@ -356,8 +373,8 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
   fake_label = 0
 
   # Setup Adam optimizers for both G and D
-  optimizerD = optim.Adam(netD.parameters(), lr=config.lr_D, betas=(config.beta1, 0.99))
-  optimizerG = optim.Adam(netG.parameters(), lr=config.lr_G, betas=(config.beta1, 0.99))
+  optimizerD = optim.Adam(netD.parameters(), lr=config.lr_D[l], betas=(config.beta1, 0.99))
+  optimizerG = optim.Adam(netG.parameters(), lr=config.lr_G[l], betas=(config.beta1, 0.99))
 
   # Training Loop
 
@@ -368,7 +385,7 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
   gradPenaltyI = []
   gradNormAvgI = []
 
-  iters = 0
+  #iters = 0
 
   one = torch.tensor(1, dtype=torch.float).to(gpusD[-1])  # alloc on last gpu of D
   mone = one * -1
@@ -379,15 +396,20 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
   nrBatchesToAddAlpha = int(totalBatches / 100 / 2)
 
   print("Starting Training Loop...")
+  netD.zero_grad()
+  netG.zero_grad()
   # For each epoch
   for epoch in range(config.numEpochs[l]):
-      if epoch == (config.numEpochs[l] - 1):
-        start = time.time()
 
       # For each batch in the DataLoaderOptimised
       #for i, data in enumerate(loader, 0):
-      for i, data in enumerate(dataBatches,0):
+      #for i, data in enumerate(dataBatches,0):
+      i = 0
+      while i < len(dataBatches):
         batchesSoFar += 1
+      
+        if i == 1:
+          start = time.time()
         
         if batchesSoFar % nrBatchesToAddAlpha == 0:
           # multiply by 2, as we want newAlpha to be 1 at 50% progress
@@ -400,174 +422,172 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
             netG.stopBlending()
             netD.stopBlending()
        
-        for a in range(config.nrAccumGrads):
 
          
-          ############################
-          # (1) Update D network: maximize log(D(x)) + log(1 - D(G(z)))
-          ###########################
-          ## Train with all-real batch
-          netD.zero_grad()
-          # Format batch
-          #print('---------------------------------')
-          #start = time.time()
-          real_cpu = data.to(gpusD[0])
-          #print('real_cpu.size', real_cpu.size())
-        
-          b_size = real_cpu.size(0)
-         
-          # Forward pass real batch through D
-          #start = time.time()
-          #print(netD)
-          #print(real_cpu.get_device())
-          #ads
-          D_real = netD(real_cpu)
-          #print('netD(real)', time.time() - start)
-          # Calculate loss on all-real batch errD_real = E_data(log(D(x)))
-          D_real = D_real.view(-1)
-          
-          # Calculate gradients for D in backward pass
-          D_real_mean = D_real.mean()
-          #print('D_real_mean', D_real_mean.shape)
-          #print('mone', mone.shape)
-          D_real_meani = D_real_mean.item()
-          #start = time.time()
-          #D_real_mean.backward(mone)
-          #print('D_real.backward()', time.time() - start)
-          
-          # add small loss to keep D from drifting too far away from zero
-          lossD = - D_real_mean + 0.001 * (D_real_mean ** 2)     
-          lossD.backward()
-          
-          #label = torch.full((b_size,), real_label, device=device)
-          #errD_real = criterion(D_real, label)
-          #errD_real.backward()          
-
-
-          ## Train with all-fake batch errD_fake = E_z [log(1 - D(G(z)))]
-          # Generate batch of latent vectors
-          noise = torch.randn(b_size, config.latDim , 1, 1, device=gpusG[0])
-          # Generate fake image batch with G
-          #start = time.time()
-          fake = netG(noise).to(gpusD[0])
-          #print('netG(noise)', time.time() - start)
-          # Classify all fake batch with D
-          D_fake = netD(fake.detach()).view(-1)
-
-          # Calculate D's loss on the all-fake batch
-          D_fake_mean = D_fake.mean()
-          D_fake_meani = D_fake_mean.item()
-          D_fake_mean.backward(one)
-
-          #label.fill_(fake_label)
-          #errD_fake = criterion(D_fake, label)
-          #errD_fake.backward()
-
-          #print('real_cpu', real_cpu[0,:,:,:]) 
-          #print('fake', fake[0,:,:,:])
-          #asd
-
-          #loss = D_fake_mean - D_real_mean + gradPenalty
-          #loss.backward() # better call backwards in each of the terms separately?
-
-          # train with gradient penalty (Wasserstein GP)
-          #start = time.time()
-          gradPenalty, gradNormAvg = calc_gradPenalty(netD, real_cpu.data, fake.data)
-          
-          #print('calc_gradPenalty()', time.time() - start)
-          #start = time.time()
-          gradPenalty.backward()
-          #print('gradPenalty.backward()', time.time() - start)
-          gradPenalty_i = gradPenalty.item()
-          #gradPenalty_i = 0
-
-          errD = - D_real_meani + D_fake_meani + gradPenalty_i
-          #errD = errD_real + errD_fake
-        
-          # Update D
-          #start = time.time()
-          optimizerD.step()
-          #print('optimizerD.step()', time.time() - start)
-
-          if i % config.n_critic == 0: # only update G evey n_critic iterations
+        for n_c in range(config.n_critic):
+          for a in range(config.nrAccumGrads):
             ############################
-            # (2) Update G network: maximize log(D(G(z)))
+            # (1) Update D network: maximize log(D(x)) + log(1 - D(G(z)))
             ###########################
-            netG.zero_grad()
+            ## Train with all-real batch
+            # Format batch
+            #print('---------------------------------')
+            #start = time.time()
+            data = next(dataBatches); i += 1;
+            real_cpu = data.to(gpusD[0])
+            #print('real_cpu.size', real_cpu.size())
+          
+            b_size = real_cpu.size(0)
+           
+            # Forward pass real batch through D
+            #start = time.time()
+            #print(netD)
+            #print(real_cpu.get_device())
+            #ads
+            D_real = netD(real_cpu)
+            #print('netD(real)', time.time() - start)
+            # Calculate loss on all-real batch errD_real = E_data(log(D(x)))
+            D_real = D_real.view(-1)
+            
+            # Calculate gradients for D in backward pass
+            D_real_mean = D_real.mean()
+            #print('D_real_mean', D_real_mean.shape)
+            #print('mone', mone.shape)
+            D_real_meani = D_real_mean.item()
+            #start = time.time()
+            #D_real_mean.backward(mone)
+            #print('D_real.backward()', time.time() - start)
+            
+            # add small loss to keep D from drifting too far away from zero
+            lossD = - D_real_mean + config.driftPenaltyD * (D_real_mean ** 2)     
+            lossD.backward()
+            
+            #label = torch.full((b_size,), real_label, device=device)
+            #errD_real = criterion(D_real, label)
+            #errD_real.backward()          
 
+
+            ## Train with all-fake batch errD_fake = E_z [log(1 - D(G(z)))]
             # Generate batch of latent vectors
             noise = torch.randn(b_size, config.latDim , 1, 1, device=gpusG[0])
             # Generate fake image batch with G
-            fake = netG(noise)
-
-            #label.fill_(real_label)  # fake labels are real for generator cost
-            # Siconfig.nce we just updated D, perform another forward pass of all-fake batch through D
-            D_fake_2 = netD(fake.to(gpusD[0])).view(-1)
-            # Calculate G's loss based on this output
-            #errG = criterion(D_fake_2, label)
-            # Calculate gradients for G
-            D_fake_2_mean = D_fake_2.mean()
-            D_fake_mean2i = D_fake_2_mean.item()
-           
-            errG = - D_fake_mean2i
             #start = time.time()
-            D_fake_2_mean.backward(mone)
-            #print('optimizerG.step()', time.time() - start)
-            #label.fill_(real_label)
-            #errG = criterion(D_fake_2, label)
-            #errG.backward()
+            fake = netG(noise).to(gpusD[0])
+            # Classify all fake batch with D
+            D_fake = netD(fake.detach()).view(-1)
+
+            # Calculate D's loss on the all-fake batch
+            D_fake_mean = D_fake.mean()
+            D_fake_meani = D_fake_mean.item()
+            D_fake_mean.backward(one)
+
+            #label.fill_(fake_label)
+            #errD_fake = criterion(D_fake, label)
+            #errD_fake.backward()
+
+            #loss = D_fake_mean - D_real_mean + gradPenalty
+            #loss.backward() # better call backwards in each of the terms separately?
+
+            # train with gradient penalty (Wasserstein GP)
+            gradPenalty, gradNormAvg = calc_gradPenalty(netD, real_cpu.data, fake.data)
+            
+            gradPenalty.backward()
+            gradPenalty_i = gradPenalty.item()
+
+            errD = - D_real_meani + D_fake_meani + gradPenalty_i
+            #errD = errD_real + errD_fake
+          
+          # Update D
+          #start = time.time()
+          optimizerD.step()
+          netD.zero_grad()
+          #print('optimizerD.step()', time.time() - start)
+
+        ############################
+        # (2) Update G network: maximize log(D(G(z)))
+        ###########################
+
+        for p in netD.parameters():
+          p.requires_grad = False  # to avoid computation
+
+        for a in range(config.nrAccumGrads):
+          # Generate batch of latent vectors
+          noise = torch.randn(b_size, config.latDim , 1, 1, device=gpusG[0])
+          # Generate fake image batch with G
+          fake = netG(noise)
+
+          #label.fill_(real_label)  # fake labels are real for generator cost
+          # Siconfig.nce we just updated D, perform another forward pass of all-fake batch through D
     
 
-            # Update G
-            optimizerG.step()
+          D_fake_2 = netD(fake.to(gpusD[0])).view(-1)
 
-          #if i == 20:
-          #  end = time.time()
-          #  print('time for last epoch', end - start)
-          #  asd
+          # Calculate G's loss based on this output
+          #errG = criterion(D_fake_2, label)
+          # Calculate gradients for G
+          D_fake_2_mean = D_fake_2.mean()
+          D_fake_mean2i = D_fake_2_mean.item()
+         
+          errG = - D_fake_mean2i
+          #start = time.time()
+          D_fake_2_mean.backward(mone)
+          #print('optimizerG.step()', time.time() - start)
+          #label.fill_(real_label)
+          #errG = criterion(D_fake_2, label)
+          #errG.backward()
 
-          # Output training stats
-          if i % config.n_critic  == 0 and ( i < 20 or i % 100 == 0) :
-            print('D(real)', D_real[:10], D_real.shape)
-            print('D(fake)', D_fake[:10], D_fake.shape)
-            print('D(fake2)', D_fake_2[:10], D_fake_2.shape)
-            print('gradPenalty %.2f  gradNormAvg %f' % (gradPenalty, gradNormAvg), '   res:%d x %d' % (config.posResX[l], config.posResY[l]))
-            print('[%d/%d][%d/%d]  Loss_D: %.4f  Loss_G: %.4f  D(x): %.4f  D(G(z)): %.4f / %.4f'
-              % (epoch, config.numEpochs[l], i, len(dataBatches),
-                 errD, errG, D_real_meani, D_fake_meani, D_fake_mean2i))
+        # Update G
+        optimizerG.step()
+        netG.zero_grad()
 
-          # Save Losses for plotting later
-          G_losses.append(errG)
-          D_losses.append(errD)
-          gradPenaltyI.append(gradPenalty_i)
-          gradNormAvgI.append(gradNormAvg)
+
+        for p in netD.parameters():
+          p.requires_grad = True  # to avoid computation
+
+        #if i == 20:
+        #  end = time.time()
+        #  print('time for last epoch', end - start)
+        #  asd
+
+        # Output training stats
+        if i % config.n_critic  == 0 and ( i < 20 or i % 100 == 0) :
+          print('D(real)', D_real[:10], D_real.shape)
+          print('D(fake)', D_fake[:10], D_fake.shape)
+          print('D(fake2)', D_fake_2[:10], D_fake_2.shape)
+          print('gradPenalty %.2f  gradNormAvg %f' % (gradPenalty, gradNormAvg), '   res:%d x %d' % (config.posResX[l], config.posResY[l]))
+          print('[%d/%d][%d/%d]  Loss_D: %.4f  Loss_G: %.4f  D(x): %.4f  D(G(z)): %.4f / %.4f'
+            % (epoch, config.numEpochs[l], i, len(dataBatches),
+               errD, errG, D_real_meani, D_fake_meani, D_fake_mean2i))
+
+        # Save Losses for plotting later
+        G_losses.append(errG)
+        D_losses.append(errD)
+        gradPenaltyI.append(gradPenalty_i)
+        gradNormAvgI.append(gradNormAvg)
           
 
-          # Check how the generator is doing by saving G's output on fixed_noise
-          if i % 3000 == 0:
-            with torch.no_grad():
-              fake = netG(fixed_noise).detach().cpu()
-              #asd
-              #print(fake.shape)
-              # keep track of all images in list for gnerating animated gif
-              img_list.append(vutils.make_grid(fake, padding=2, normalize=True, nrow=nrows))
-              #print(img_list)
-    
-            plotFake(img_list, l, epoch, i)
+        # Check how the generator is doing by saving G's output on fixed_noise
+        j = i - config.nrAccumGrads * config.n_critic
+        if j % 3000 == 0:
+          with torch.no_grad():
+            fake = netG(fixed_noise).detach().cpu()
+            #asd
+            #print(fake.shape)
+            # keep track of all images in list for gnerating animated gif
+            img_list.append(vutils.make_grid(fake, padding=2, normalize=True, nrow=nrows))
+            #print(img_list)
+  
+          plotFake(img_list, l, epoch, j)
+          saveLosses(G_losses, D_losses, gradPenaltyI, gradNormAvgI)
+          if j > 0:
             saveModel(netG, netD, G_losses, D_losses, img_list)
-            saveLosses(G_losses, D_losses, gradPenaltyI, gradNormAvgI)
 
 
-          iters += 1
+          #iters += 1
 
   end = time.time()
   print('time for last epoch', end - start)
   
-
-  #if dataParallel:
-  #  G_state = netG.module.state_dict()
-  #  D_state = netD.module.state_dict()
-  #else:
 
   saveModel(netG, netD, G_losses, D_losses, img_list)
  
@@ -603,7 +623,7 @@ def plotFake(img_list, l, epoch, i):
 
 
 def plotImages(dataBatches, nrImgToShow, nrows, img_list):
-  real_batch = next(iter(dataBatches))
+  real_batch = next(dataBatches)
 
   # Plot the real images
   fig = pl.figure(figsize=(15,7.5))
@@ -641,8 +661,13 @@ def saveLosses(G_losses, D_losses, gradPenaltyI, gradNormAvgI):
 
 
 def saveModel(netG, netD, G_losses, D_losses, img_list):
-  G_state = netG.state_dict()
-  D_state = netD.state_dict()
+
+  if config.parallelMode == 'data-parallel':
+    G_state = netG.module.state_dict()
+    D_state = netD.module.state_dict()
+  else:
+    G_state = netG.state_dict()
+    D_state = netD.state_dict()
 
 
   torch.save({
