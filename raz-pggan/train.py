@@ -88,6 +88,11 @@ print(torch.cuda.get_device_name(0))
 print('is_available', torch.cuda.is_available())
 
 
+def cycle(iterable):
+  while True:
+    for x in iterable:
+      yield x
+
 # custom weights initialization called on netG and netD
 def weights_init(m):
   classname = m.__class__.__name__
@@ -282,7 +287,7 @@ def loadBatches(l):
 
     dataBatches = loader
 
-  return iter(dataBatches)
+  return iter(cycle(dataBatches))
 
 
 

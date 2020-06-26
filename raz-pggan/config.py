@@ -1,4 +1,5 @@
 # Root directory for dataset
+# csv file should be in the format of xray_pngs_dummy.csv
 train_images_list = "xray_pngs.csv" # all 360k
 #train_images_list = "xray_pngs_scratch.csv" # all 360k
 
@@ -18,8 +19,8 @@ modelLoadPath = 'generated/lev3_l0.2_lr0.001_ngc512_ndc512_lD512_beta0_nc1_i3690
 #debug = True
 debug = False
 
-# experiments ran on GPUS with 12GB memory
-# choose a preset (number of gpus, batchSizes)
+
+# choose a preset (number of gpus, batchSizes, other params, ..)
 #ngpu = 1; batchSize = [16,16,16,16,16,16,16,16,16];  lr_G = [0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001] # 0.003 is too high
 #ngpu = 1; batchSize = [128,128,128,64,32,16,8,4,3];  lr_G = [0.0015,0.0015,0.0015,0.0015,0.0015,0.0015,0.0015,0.0015,0.0015] # 0.003 is too high
 #desc = 'r1'; ngpu = 8; batchSize = [512,256,128,64,64,64,64,32,32];  lr_G = [0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001] # 0.003 is too high
@@ -29,18 +30,18 @@ debug = False
 #desc = 'r5'; ngpu = 4; batchSize = [256,128,64,32,16,16,8,8,16];  lr_G = [0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001]; nrAccumGrads = 1; driftPenaltyD = 0.1;
 #desc = 'r6'; ngpu = 4; batchSize = [512,256,128,64,16,16,16,16,16];  lr_G = [0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001]; nrAccumGrads = 1; driftPenaltyD = 0.001;
 #desc = 'r7'; ngpu = 4; batchSize = [512,256,128,64,16,16,16,16,16];  lr_G = [0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001]; nrAccumGrads = 1; driftPenaltyD = 0.001; lambdaGrad = 10; n_critic=5
-desc = 'r8'; ngpu = 8; batchSize = [512,256,128,64,32,32,32,32,16];  lr_G = [0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001]; nrAccumGrads = 1; driftPenaltyD = 0.001; lambdaGrad = 0.2; n_critic=1
+desc = 'r8'; ngpu = 4; batchSize = [512,256,128,64,16,32,32,32,16];  lr_G = [0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001]; nrAccumGrads = 1; driftPenaltyD = 0.001; lambdaGrad = 0.2; n_critic=1
 
 # Number of workers for dataloader, for each growth level
 workers = [10,10,10,10,10,10,10,10,10]
 #workers = [1,1,1,1,1,1,1,1,1]
 
 # for running tests on a subset of the data (max = 369,000)
-#nrImgsToLoad = 40000
-nrImgsToLoad = 369000
+nrImgsToLoad = 40000
+#nrImgsToLoad = 369000
 
-loadBatchesMode = 'on-demand'  # can be 'fileLoad', 'fileSave'
-#loadBatchesMode = 'fileLoad'  # can be 'fileLoad', 'fileSave'
+#loadBatchesMode = 'on-demand'  # can be 'fileLoad', 'fileSave'
+loadBatchesMode = 'fileLoad'  # can be 'fileLoad', 'fileSave'
 
 batchFiles = ['generated/batches/r%d_b%d_i%d.pt' % (posResX[r], batchSize[r], nrImgsToLoad) for r in range(len(posResX))]
 
