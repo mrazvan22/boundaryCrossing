@@ -30,18 +30,20 @@ debug = False
 #desc = 'r5'; ngpu = 4; batchSize = [256,128,64,32,16,16,8,8,16];  lr_G = [0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001]; nrAccumGrads = 1; driftPenaltyD = 0.1;
 #desc = 'r6'; ngpu = 4; batchSize = [512,256,128,64,16,16,16,16,16];  lr_G = [0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001]; nrAccumGrads = 1; driftPenaltyD = 0.001;
 #desc = 'r7'; ngpu = 4; batchSize = [512,256,128,64,16,16,16,16,16];  lr_G = [0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001]; nrAccumGrads = 1; driftPenaltyD = 0.001; lambdaGrad = 10; n_critic=5
-desc = 'r8'; ngpu = 4; batchSize = [512,256,128,64,16,32,32,32,16];  lr_G = [0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001]; nrAccumGrads = 1; driftPenaltyD = 0.001; lambdaGrad = 0.2; n_critic=1
+desc = 'r8'; ngpu = 8; batchSize = [512,256,128,64,32,32,32,32,16];  lr_G = [0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001,0.001]; nrAccumGrads = 1; driftPenaltyD = 0.001; lambdaGrad = 0.2; n_critic=1
 
 # Number of workers for dataloader, for each growth level
 workers = [10,10,10,10,10,10,10,10,10]
 #workers = [1,1,1,1,1,1,1,1,1]
 
 # for running tests on a subset of the data (max = 369,000)
-nrImgsToLoad = 40000
+#nrImgsToLoad = 1000
+#nrImgsToLoad = 40000
 #nrImgsToLoad = 369000
+nrImgsToLoad = 370000
 
-#loadBatchesMode = 'on-demand'  # can be 'fileLoad', 'fileSave'
-loadBatchesMode = 'fileLoad'  # can be 'fileLoad', 'fileSave'
+loadBatchesMode = 'on-demand'  # can be 'fileLoad', 'fileSave'
+#loadBatchesMode = 'fileLoad'  # can be 'fileLoad', 'fileSave'
 
 batchFiles = ['generated/batches/r%d_b%d_i%d.pt' % (posResX[r], batchSize[r], nrImgsToLoad) for r in range(len(posResX))]
 

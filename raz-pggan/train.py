@@ -287,7 +287,7 @@ def loadBatches(l):
 
     dataBatches = loader
 
-  return iter(cycle(dataBatches))
+  return iter(cycle(dataBatches)), len(dataBatches)
 
 
 
@@ -330,7 +330,7 @@ def calc_gradPenalty(netD, real_data, fake_data):
   return gradPenalty, gradNormsB.mean().item()
    
 
-def oneLevel(netG, netD, criterion, dataBatches, l):
+def oneLevel(netG, netD, criterion, dataBatches, nrBatches, l):
   if l != 0: # grow the network in resolution 
     #if dataParallel:
     #  netG.module.grow_network()
@@ -395,7 +395,7 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
   one = torch.tensor(1, dtype=torch.float).to(gpusD[-1])  # alloc on last gpu of D
   mone = one * -1
   
-  nrBatches = len(dataBatches)
+  #nrBatches = len(dataBatches)
   batchesSoFar = 0
   totalBatches = config.numEpochs[l] * nrBatches
   nrBatchesToAddAlpha = int(totalBatches / 100 / 2)
@@ -410,7 +410,7 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
       #for i, data in enumerate(loader, 0):
       #for i, data in enumerate(dataBatches,0):
       i = 0
-      while i < len(dataBatches):
+      while i < nrBatches:
         batchesSoFar += 1
       
         if i == 1:
@@ -561,7 +561,7 @@ def oneLevel(netG, netD, criterion, dataBatches, l):
           print('D(fake2)', D_fake_2[:10], D_fake_2.shape)
           print('gradPenalty %.2f  gradNormAvg %f' % (gradPenalty, gradNormAvg), '   res:%d x %d' % (config.posResX[l], config.posResY[l]))
           print('[%d/%d][%d/%d]  Loss_D: %.4f  Loss_G: %.4f  D(x): %.4f  D(G(z)): %.4f / %.4f'
-            % (epoch, config.numEpochs[l], i, len(dataBatches),
+            % (epoch, config.numEpochs[l], i, nrBatches,
                errD, errG, D_real_meani, D_fake_meani, D_fake_mean2i))
 
         # Save Losses for plotting later
@@ -713,9 +713,8 @@ if __name__ == '__main__':
   # curRes = current resolution     config.posRes = list of possible resolutions
   for l in range(config.startResLevel, config.nrLevels):
     os.system("printf '\033]2;%s-%s\033\\'" % (socket.gethostname(), config.outFolder[l]))
-    dataBatches = loadBatches(l)
-    print(len(dataBatches))
-    oneLevel(netG, netD, criterion, dataBatches, l)
+    dataBatches, nrBatches = loadBatches(l)
+    oneLevel(netG, netD, criterion, dataBatches, nrBatches, l)
     #asd    
 
 

@@ -13,6 +13,8 @@ from matplotlib import pyplot as plt
 from PIL import Image
 import torch.nn.functional
 
+import config
+
 class dataloader:
   def __init__(self, config):
     pass
@@ -76,7 +78,7 @@ class PngDataset(data.Dataset):
 
   def __len__(self):
     # Return amount of samples of your dataset.
-    return len(self.train_images_list)
+    return min(config.nrImgsToLoad, len(self.train_images_list))
 
 
 class DicomDataset(data.Dataset):
